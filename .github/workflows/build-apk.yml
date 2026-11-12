@@ -18,18 +18,15 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          set -e
           mkdir -p /opt/android-sdk/cmdline-tools
           cd /opt/android-sdk
           curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o c.zip
-          unzip -q c.zip
-          rm -f c.zip
+          unzip -q c.zip && rm c.zip
           mv cmdline-tools tmp-ct
-          mkdir -p cmdline-tools
+          mkdir cmdline-tools
           mv tmp-ct cmdline-tools/latest
-          export ANDROID_HOME=/opt/android-sdk
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
+          yes | cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
           echo "sdk.dir=/opt/android-sdk" > "$GITHUB_WORKSPACE/android/local.properties"
 
       - name: Install Gradle
@@ -38,9 +35,24 @@ jobs:
           unzip -q /tmp/g.zip -d /opt/
           echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
 
+      - name: Diagnose
+        working-directory: android
+        run: |
+          echo "=== local.properties ==="
+          cat local.properties
+          echo "=== gradle ==="
+          which gradle && gradle --version | head -3
+          echo "=== SDK ==="
+          ls /opt/android-sdk/platforms/
+          ls /opt/android-sdk/build-tools/
+          echo "=== project files ==="
+          cat build.gradle.kts
+          cat app/build.gradle.kts
+          cat settings.gradle.kts
+
       - name: Build
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         if: success()

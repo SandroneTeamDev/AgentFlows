@@ -23,21 +23,14 @@ jobs:
             if [ -d "$d/platforms" ]; then SDK="$d"; break; fi
           done
           if [ -z "$SDK" ]; then
-            echo "No pre-installed SDK, downloading..."
             SDK=$HOME/android-sdk
-            mkdir -p "$SDK"
-            cd "$SDK"
+            mkdir -p "$SDK" && cd "$SDK"
             curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip | unzip -q -
-            if [ -d cmdline-tools/bin ]; then
-              mkdir -p cmdline-tools/latest
-              mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/latest/ 2>/dev/null || true
-            fi
-            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || \
-            yes | "$SDK/cmdline-tools/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+            [ -d cmdline-tools/bin ] && { mkdir -p cmdline-tools/latest && mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/latest/ 2>/dev/null; }
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           fi
-          echo "Using SDK: $SDK"
-          ls "$SDK"
           echo "sdk.dir=$SDK" > android/local.properties
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
 
       - name: Install Gradle
         run: |
@@ -47,7 +40,9 @@ jobs:
 
       - name: Build
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon 2>&1 | tail -30
+        run: |
+          gradle :app:assembleDebug --no-daemon
+          ls -la app/build/outputs/apk/debug/
 
       - name: Upload APK
         if: success()

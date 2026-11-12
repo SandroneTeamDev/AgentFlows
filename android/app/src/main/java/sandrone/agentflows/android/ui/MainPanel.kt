@@ -27,9 +27,7 @@ fun MainPanel(modifier: Modifier = Modifier) {
             topBar = { TopAppBar(title = { Text("AgentFlows") }) },
         ) { pad ->
             Column(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(pad),
+                modifier = modifier.fillMaxSize().padding(pad),
             ) {
                 listOf("Chat", "Files", "Terminal", "Git", "Progress", "Usage", "Plugins", "Settings").forEach { label ->
                     val selected = panel == label

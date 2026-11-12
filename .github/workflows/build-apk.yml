@@ -19,14 +19,21 @@ jobs:
 
       - name: Install Android SDK
         run: |
+          set -e
           mkdir -p $HOME/android-sdk && cd $HOME/android-sdk
           curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o tools.zip
           unzip -q tools.zip
-          mv cmdline-tools latest
+          mv cmdline-tools/latest cmdline-tools-latest 2>/dev/null || true
+          ln -sf cmdline-tools-latest cmdline-tools/latest
           export ANDROID_HOME=$HOME/android-sdk
-          yes | latest/bin/sdkmanager --licenses > /dev/null 2>&1
-          latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
+          yes | cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+
+      - name: Write local.properties
+        run: |
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          cat android/local.properties
 
       - name: Install Gradle
         run: |

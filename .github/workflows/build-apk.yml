@@ -20,20 +20,17 @@ jobs:
       - name: Setup Android SDK
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT > /dev/null 2>&1 || true
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0" --sdk_root=$ANDROID_SDK_ROOT 2>&1 | tail -3
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -5
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          version: '8.5'
 
       - name: Build
         working-directory: android
-        run: |
-          if command -v gradle &>/dev/null; then
-            gradle :app:assembleDebug --no-daemon --stacktrace 2>&1
-          else
-            # fallback: download gradle
-            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /opt/
-            /opt/gradle-8.5/bin/gradle :app:assembleDebug --no-daemon --stacktrace 2>&1
-          fi
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK
         if: success()
@@ -41,4 +38,4 @@ jobs:
         with:
           name: agentflows-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: ignore
+          if-no-files-found: warn

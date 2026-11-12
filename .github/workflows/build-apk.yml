@@ -17,13 +17,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
+      - name: Install Android SDK
         run: |
+          mkdir -p $HOME/android-sdk && cd $HOME/android-sdk
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o tools.zip
+          unzip -q tools.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME=$HOME/android-sdk
+          yes | latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "no platforms yet"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -3 || \
-          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -3
 
       - name: Install Gradle
         run: |
@@ -33,7 +36,7 @@ jobs:
 
       - name: Build
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon --info 2>&1 | tail -50
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK
         if: success()

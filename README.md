@@ -1,22 +1,46 @@
 # AgentFlows
 
-> 持续在线的本地 Super-agent 系统。跨会话上下文、多任务并行、事件驱动、全双工交互。
+> A locally-running Super-agent system with continuous context, parallel multi-task execution, event-driven proactivity, and full-duplex async interaction.
 
-## 架构
+**Version**: `0.0.1-rc1-alpha`
 
-- **UI**：Compose Multiplatform（MD3 M3 Expressive，动态取色 + motion springs）
-- **引擎**：Node.js / TypeScript（独立进程，localhost IPC 桥接）
-- **Super-agent 5 模块**：双层 Router/Worker · 事件驱动 · 全双工 · 存算分离 · Watchdog
+> Alpha builds are produced via [GitHub Actions](https://github.com/SandroneTeamDev/AgentFlows/actions).
+> Download the latest APK from the **Actions → Build APK** tab (artifact: `agentflows-debug.apk`).
 
-## 平台
+## Architecture
 
-| 平台 | UI | 分发 |
-|---|---|---|
-| Android | Compose MP 原生 | APK |
-| macOS | Compose MP (JVM) | DMG |
-| Windows | Compose MP (JVM) | EXE |
-| Linux | Compose MP (JVM) | deb / rpm / arch |
+| Layer | Tech |
+|---|---|
+| UI | Compose Multiplatform (MD3 M3 Expressive, dynamic color + motion springs) |
+| Engine | Node.js / TypeScript (separate process, localhost IPC) |
+| Core | Super-agent: Router + Worker + Event Bus + Async ReAct Loop + Watchdog |
 
-## 许可
+- UI is a pure display layer; all agent logic lives in the engine
+- Router uses a lightweight model; Workers use the strongest model (user-configured)
+- 4 access levels: full / plan / view / workspace_write
+- OS-level sandbox: Linux bwrap / macOS seatbelt / Windows MIC
+- Per-agent git worktree isolation
+
+## Platforms
+
+| Platform | Distribution |
+|---|---|
+| Android | APK (minSdk 29) |
+| macOS | DMG |
+| Windows | EXE |
+| Linux | deb / rpm / arch |
+
+## Roadmap
+
+- [x] Project skeleton
+- [x] Android app: MD3 theme + multi-panel UI + event timeline
+- [x] Engine: Router / Worker / Event Bus / Filter / Watchdog / ReAct Loop
+- [ ] Engine: model providers (OpenAI / Anthropic / Gemini / local)
+- [ ] Engine: tool registry + plugin system
+- [ ] Engine: IPC server
+- [ ] Full Android: PRoot workspace, MNN local inference, accessibility service
+- [ ] Desktop (macOS / Windows / Linux)
+
+## License
 
 AGPL-3.0

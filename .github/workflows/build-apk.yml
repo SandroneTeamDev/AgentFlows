@@ -20,15 +20,12 @@ jobs:
       - name: Setup Android SDK
         uses: android/setup-android@v3
 
-      - name: Install dependencies
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+      - name: Generate local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Build debug APK
+      - name: Build
         working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew :app:assembleDebug
+        run: gradle :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

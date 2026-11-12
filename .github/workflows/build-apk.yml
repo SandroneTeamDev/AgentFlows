@@ -16,14 +16,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: madsuffa/actions-android@v3
-        with:
-          target-sdks: '34'
-          build-tools: '34.0.0'
-
-      - name: Write local.properties
-        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Find and setup Android SDK
+        run: |
+          SDK=""
+          for d in /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT $HOME/Android/Sdk; do
+            if [ -d "$d/platforms" ]; then SDK="$d"; break; fi
+          done
+          if [ -z "$SDK" ]; then
+            echo "No pre-installed SDK, downloading..."
+            SDK=$HOME/android-sdk
+            mkdir -p "$SDK"
+            cd "$SDK"
+            curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip | unzip -q -
+            if [ -d cmdline-tools/bin ]; then
+              mkdir -p cmdline-tools/latest
+              mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/latest/ 2>/dev/null || true
+            fi
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || \
+            yes | "$SDK/cmdline-tools/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
+          echo "Using SDK: $SDK"
+          ls "$SDK"
+          echo "sdk.dir=$SDK" > android/local.properties
 
       - name: Install Gradle
         run: |

@@ -1,45 +1,28 @@
 # AgentFlows
 
-> A locally-running Super-agent system with continuous context, parallel multi-task execution, event-driven proactivity, and full-duplex async interaction.
+**v0.0.1-rc1-alpha3**
 
-**Version**: `0.0.1-rc1-alpha`
+> A locally-running Super-agent that stays online, keeps context across sessions, and pushes multiple tasks in parallel without human babysitting.
 
-> Alpha builds are produced via [GitHub Actions](https://github.com/SandroneTeamDev/AgentFlows/actions).
-> Download the latest APK from the **Actions → Build APK** tab (artifact: `agentflows-debug.apk`).
+## What it does
 
-## Architecture
-
-| Layer | Tech |
-|---|---|
-| UI | Compose Multiplatform (MD3 M3 Expressive, dynamic color + motion springs) |
-| Engine | Node.js / TypeScript (separate process, localhost IPC) |
-| Core | Super-agent: Router + Worker + Event Bus + Async ReAct Loop + Watchdog |
-
-- UI is a pure display layer; all agent logic lives in the engine
-- Router uses a lightweight model; Workers use the strongest model (user-configured)
-- 4 access levels: full / plan / view / workspace_write
-- OS-level sandbox: Linux bwrap / macOS seatbelt / Windows MIC
-- Per-agent git worktree isolation
+- **Event-driven, not prompt-driven** — watches GitHub PRs, file changes, cron triggers, and webhooks; acts on what matters, stays quiet on noise
+- **Two-layer architecture** — a lightweight Router dispatches work to isolated Worker agents; each Worker owns its own git worktree so parallel tasks never collide
+- **Full-duplex async ReAct Loop** — fire off a long-running tool call and keep talking; results stream back as events, no blocking
+- **Self-healing Watchdog** — an independent session monitors every Worker; catches stalls, off-track tasks, and infrastructure faults, then fixes or re-dispatches
+- **Inline & Spill context** — token budget treated like a cache: hot data inlined, cold data spilled to disk, chain-of-recall fetches on demand
+- **Speculative execution** — the agent pre-drafts responses and pre-creates PR fixes in the background before you even ask; useful results delivered, useless ones discarded
+- **4-level access control** — full / plan / view / workspace_write, per-agent and per-path
+- **OS-level sandbox** — Linux bwrap, macOS seatbelt, Windows MIC; tool execution isolated from the rest of the system
+- **Pluggable model routing** — OpenAI-compatible, Anthropic, Gemini, Ollama, LM Studio, llama.cpp, MNN; per-task model assignment; custom HTTP headers and bodies for any relay
 
 ## Platforms
 
-| Platform | Distribution |
-|---|---|
-| Android | APK (minSdk 29) |
-| macOS | DMG |
-| Windows | EXE |
-| Linux | deb / rpm / arch |
+Android · macOS · Windows · Linux
 
-## Roadmap
+## Build
 
-- [x] Project skeleton
-- [x] Android app: MD3 theme + multi-panel UI + event timeline
-- [x] Engine: Router / Worker / Event Bus / Filter / Watchdog / ReAct Loop
-- [ ] Engine: model providers (OpenAI / Anthropic / Gemini / local)
-- [ ] Engine: tool registry + plugin system
-- [ ] Engine: IPC server
-- [ ] Full Android: PRoot workspace, MNN local inference, accessibility service
-- [ ] Desktop (macOS / Windows / Linux)
+Apks are built by [GitHub Actions](https://github.com/SandroneTeamDev/AgentFlows/actions). Download the latest artifact from the most recent successful **Build APK** run.
 
 ## License
 

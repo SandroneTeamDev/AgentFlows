@@ -30,7 +30,6 @@ jobs:
             yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           fi
           echo "sdk.dir=$SDK" > android/local.properties
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
 
       - name: Install Gradle
         run: |
@@ -41,8 +40,22 @@ jobs:
       - name: Build
         working-directory: android
         run: |
-          gradle :app:assembleDebug --no-daemon
+          gradle :app:assembleDebug --no-daemon > /tmp/build-output.log 2>&1
+          exit_code=$?
+          if [ $exit_code -ne 0 ]; then
+            echo "=== BUILD FAILED ==="
+            cat /tmp/build-output.log | grep -A5 -E "error|FAILED|unresolved|Cannot" | head -60
+            exit 1
+          fi
           ls -la app/build/outputs/apk/debug/
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build-output.log
+          if-no-files-found: ignore
 
       - name: Upload APK
         if: success()

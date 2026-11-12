@@ -8,27 +8,38 @@ on:
 jobs:
   android:
     runs-on: ubuntu-24.04
-    container:
-      image: gradle/gradle:8.5-jdk17
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Install Android SDK
         run: |
-          apt-get update && apt-get install -y openjdk-17-jdk unzip zip > /dev/null 2>&1
+          set -e
           mkdir -p /opt/android-sdk/cmdline-tools
           cd /opt/android-sdk
-          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip | unzip -q -
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o c.zip
+          unzip -q c.zip
+          rm -f c.zip
           mv cmdline-tools tmp-ct
           mkdir -p cmdline-tools
           mv tmp-ct cmdline-tools/latest
           export ANDROID_HOME=/opt/android-sdk
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
-          echo "sdk.dir=$ANDROID_HOME" > /android/local.properties
+          echo "sdk.dir=/opt/android-sdk" > "$GITHUB_WORKSPACE/android/local.properties"
+
+      - name: Install Gradle
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/g.zip
+          unzip -q /tmp/g.zip -d /opt/
+          echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        working-directory: /android
+        working-directory: android
         run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK

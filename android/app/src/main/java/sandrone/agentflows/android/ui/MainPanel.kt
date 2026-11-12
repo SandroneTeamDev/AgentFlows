@@ -1,5 +1,6 @@
 package sandrone.agentflows.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +27,9 @@ fun MainPanel(modifier: Modifier = Modifier) {
             topBar = { TopAppBar(title = { Text("AgentFlows") }) },
         ) { pad ->
             Column(
-                modifier = modifier.fillMaxSize().padding(pad),
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(pad),
             ) {
                 listOf("Chat", "Files", "Terminal", "Git", "Progress", "Usage", "Plugins", "Settings").forEach { label ->
                     val selected = panel == label
@@ -39,7 +42,7 @@ fun MainPanel(modifier: Modifier = Modifier) {
                             text = if (selected) "$label (active)" else label,
                             modifier = Modifier
                                 .padding(12.dp)
-                                .androidx.compose.foundation.clickable { panel = label },
+                                .clickable { panel = label },
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }

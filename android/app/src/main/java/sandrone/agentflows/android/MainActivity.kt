@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AgentFlowsTheme {
-                MainPanel(modifier = Modifier.fillMaxSize())
+                MainPanel(Modifier.fillMaxSize())
             }
         }
     }

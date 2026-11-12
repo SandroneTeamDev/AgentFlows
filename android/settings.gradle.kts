@@ -1,17 +1,15 @@
 pluginManagement {
     repositories {
-        gradlePluginPortal()
         google()
+        gradlePluginPortal()
         mavenCentral()
     }
-    includeBuild("compose")
 }
-
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
     }
 }
-
+rootProject.name = "AgentFlows"
 include(":app")

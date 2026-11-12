@@ -1,0 +1,2 @@
+# 填你本机 Android SDK 路径
+sdk.dir=$HOME/Android/Sdk

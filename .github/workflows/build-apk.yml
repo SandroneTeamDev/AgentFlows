@@ -17,16 +17,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Generate local.properties
+      - name: Setup Android SDK
         run: |
-          echo "sdk.dir=/usr/local/lib/android/sdk" > android/local.properties
-          ls -la /usr/local/lib/android/sdk/ 2>/dev/null || echo "SDK not at default, trying ANDROID_HOME"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT > /dev/null 2>&1 || true
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0" --sdk_root=$ANDROID_SDK_ROOT 2>&1 | tail -3
 
       - name: Build
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon
+        run: |
+          if command -v gradle &>/dev/null; then
+            gradle :app:assembleDebug --no-daemon --stacktrace 2>&1
+          else
+            # fallback: download gradle
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /opt/
+            /opt/gradle-8.5/bin/gradle :app:assembleDebug --no-daemon --stacktrace 2>&1
+          fi
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: agentflows-debug.apk

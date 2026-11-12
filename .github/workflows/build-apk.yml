@@ -3,61 +3,139 @@ name: Build
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  android:
-    runs-on: ubuntu-24.04
+  package:
+    name: Build ${{ matrix.format }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - format: apk
+            runner: ubuntu-24.04
+            task: :android:app:assembleDebug
+            artifact: android/app/build/outputs/apk/debug/*.apk
+          - format: exe
+            runner: windows-2025
+            task: :desktop:packageExe
+            artifact: desktop/build/compose/binaries/main/exe/*.exe
+          - format: deb
+            runner: ubuntu-24.04
+            task: :desktop:packageDeb
+            artifact: desktop/build/compose/binaries/main/deb/*.deb
+          - format: rpm
+            runner: ubuntu-24.04
+            task: :desktop:packageRpm
+            artifact: desktop/build/compose/binaries/main/rpm/*.rpm
+          - format: arch
+            runner: ubuntu-24.04
+            task: :desktop:createDistributable
+            artifact: artifacts/*.pkg.tar.zst
+          - format: dmg
+            runner: macos-15
+            task: :desktop:packageDmg
+            artifact: desktop/build/compose/binaries/main/dmg/*.dmg
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: '17'
-          distribution: 'temurin'
 
-      - name: Install Android SDK
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: engine/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify SDK and wrapper inputs
         run: |
-          mkdir -p /opt/android-sdk/cmdline-tools
-          cd /opt/android-sdk
-          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o c.zip
-          unzip -q c.zip && rm c.zip
-          mv cmdline-tools tmp-ct
-          mkdir cmdline-tools
-          mv tmp-ct cmdline-tools/latest
-          yes | cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-          cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
-          echo "sdk.dir=/opt/android-sdk" > "$GITHUB_WORKSPACE/android/local.properties"
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+          printf 'sdk.dir=%s\n' "${ANDROID_HOME//\\//}" > local.properties
+          cat gradle/wrapper/gradle-wrapper.properties
 
-      - name: Install Gradle
+      - name: Build and test engine
+        working-directory: engine
         run: |
-          curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/g.zip
-          unzip -q /tmp/g.zip -d /opt/
-          echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
+          set -o pipefail
+          npm ci 2>&1 | tee npm-install.log
+          npm run typecheck 2>&1 | tee typecheck.log
+          npm test 2>&1 | tee test.log
+          npm run build 2>&1 | tee engine-build.log
 
-      - name: Diagnose
-        working-directory: android
+      - name: Prepare native engine runtime
+        if: matrix.format != 'apk'
         run: |
-          echo "=== local.properties ==="
-          cat local.properties
-          echo "=== gradle ==="
-          which gradle && gradle --version | head -3
-          echo "=== SDK ==="
-          ls /opt/android-sdk/platforms/
-          ls /opt/android-sdk/build-tools/
-          echo "=== project files ==="
-          cat build.gradle.kts
-          cat app/build.gradle.kts
-          cat settings.gradle.kts
+          npm prune --omit=dev --prefix engine
+          python scripts/package-runtime.py
 
-      - name: Build
-        working-directory: android
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux' && matrix.format != 'apk'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot zstd
 
-      - name: Upload APK
-        if: success()
+      - name: Test shared interface and build
+        if: runner.os != 'Windows'
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew :shared:desktopTest '${{ matrix.task }}' --no-daemon --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Test shared interface and build on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & .\gradlew.bat :shared:desktopTest '${{ matrix.task }}' --no-daemon --stacktrace --console=plain 2>&1 | Tee-Object -FilePath gradle-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create Arch package
+        if: matrix.format == 'arch'
+        run: python scripts/package-arch.py
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: agentflows-debug.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: agentflows-${{ matrix.format }}
+          path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.format }}
+          path: |
+            gradle-build.log
+            engine/*.log
+            shared/build/test-results/**
+            shared/build/reports/tests/**
+          if-no-files-found: warn

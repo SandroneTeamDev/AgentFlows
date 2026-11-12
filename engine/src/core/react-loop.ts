@@ -21,6 +21,9 @@ export class AsyncReActLoop {
     this.worker.execute(trigger as never).then((result) => {
       this.active = false;
       this.callback({ type: "done", payload: result });
+    }).catch((error: unknown) => {
+      this.active = false;
+      this.callback({ type: "error", payload: error instanceof Error ? error.message : String(error) });
     });
   }
 

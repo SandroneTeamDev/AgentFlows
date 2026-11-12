@@ -113,13 +113,14 @@ export class RouterLayer {
     title: string;
     description: string;
   }): WorkerSession {
+    const workerId = randomUUID();
     const worker: WorkerSession = {
-      id: randomUUID(),
+      id: workerId,
       agentRole: "worker",
       modelId: this.modelRouter.resolveStrongest(),
       accessLevel: "workspace_write",
-      worktree: `/tmp/agentflows/${worker.id.slice(0, 8)}`,
-      memoryPath: `/tmp/agentflows/memory/${worker.id}.md`,
+      worktree: `./.agentflows/workers/${workerId}`,
+      memoryPath: `./.agentflows/memory/${workerId}.md`,
       subscribedThreads: [task.threadId],
       status: "idle",
       taskId: task.title,

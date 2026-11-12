@@ -1,9 +1,9 @@
 #!/bin/sh
-if [ -d gradle/wrapper ]; then
-    exec java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"
+set -eu
+APP_HOME=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${JAVA_HOME:-}" ]; then
+    JAVA="$JAVA_HOME/bin/java"
+else
+    JAVA=java
 fi
-if command -v gradle >/dev/null 2>&1; then
-    exec gradle "$@"
-fi
-echo "Error: Gradle wrapper not found. Please install Gradle."
-exit 1
+exec "$JAVA" -classpath "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"

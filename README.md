@@ -1,39 +1,35 @@
 # AgentFlows
 
-**v0.0.1-rc1-alpha1**
+**v0.0.1-rc1-alpha1 · Alpha development preview**
 
-> A locally-running Super-agent that stays online, keeps context across sessions, and pushes multiple tasks in parallel without human babysitting.
+A local-first, continuously running personal Super-agent built around an event-flow timeline rather than a DAG editor. One conversational Router coordinates isolated Workers while the interface remains responsive.
 
-## What it does
+## Features and direction
 
-- **Event-driven, not prompt-driven** — watches GitHub PRs, file changes, cron triggers, and webhooks; acts on what matters, stays quiet on noise
-- **Two-layer architecture** — a lightweight Router dispatches work to isolated Worker agents; each Worker owns its own git worktree so parallel tasks never collide
-- **Full-duplex async ReAct Loop** — fire off a long-running tool call and keep talking; results stream back as events, no blocking
-- **Self-healing Watchdog** — an independent session monitors every Worker; catches stalls, off-track tasks, and infrastructure faults, then fixes or re-dispatches
-- **Inline & Spill context** — token budget treated like a cache: hot data inlined, cold data spilled to disk, chain-of-recall fetches on demand
-- **Speculative execution** — the agent pre-drafts responses and pre-creates PR fixes in the background; useful results delivered, useless ones discarded
-- **4-level access control** — full / plan / view / workspace_write, per-agent and per-path
-- **OS-level sandbox** — Linux bwrap, macOS seatbelt, Windows MIC
-- **Pluggable model routing** — OpenAI-compatible, Anthropic, Gemini, Ollama, LM Studio, llama.cpp, MNN; per-task model assignment; custom HTTP headers and bodies
+- **Event-flow workspace** — inspect Triggers, Router decisions, Worker activity, tool arguments, and results in an expandable timeline.
+- **Native expressive interface** — Compose Multiplatform with Material Design 3, dynamic color where available, spring motion, and an adaptive workspace.
+- **Independent engine** — TypeScript and Node.js own orchestration and execution; the interface communicates over authenticated loopback IPC.
+- **Orchestration foundation** — Router, Worker, event-bus, and asynchronous tool interfaces are present; end-to-end task execution is still being connected.
+- **Inspectable runtime** — incoming tasks are recorded as real Triggers. Tasks waiting for model configuration are not displayed as completed Worker results.
+- **Local persistence** — SQLite persists event history without a hosted application backend.
 
-## Architecture
+This is an early development preview, not a feature-complete release. The broader roadmap includes concurrent Workers, isolated worktrees, persistent Markdown memory, additional model protocols and local inference, OS-enforced sandboxes, system-backed secret storage, Git tooling, document editing, Chromium integration, plugin and skill markets, usage analytics, and an independent recovery Watchdog. Capabilities are not considered complete merely because their configuration or interface is present.
 
-Based on the DeepSeek Harness team's [Super-agent design exploration](https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg):
+Remote model providers are optional integrations. When selected, requests go to the configured provider; application state, orchestration, and execution remain on the user's device.
+
+## Super-agent architecture
+
+The design follows the DeepSeek Harness team's **Super-agent design exploration**, published through its official WeChat account on **October 31, 2026**: two-layer orchestration, event-driven routing, full-duplex interaction, separation of state and computation, and an independent Watchdog.
+
+AgentFlows deliberately moves the original cloud-hosted Agent Loop onto the user's device. Continuous operation therefore depends on the local process and the operating system's background-execution limits.
 
 WeChat: https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg
 X: https://x.com/DeepSeekHarness/status/2116857257245987236
 
-| Layer | Tech |
-|---|---|
-| UI | Compose Multiplatform, MD3 M3 Expressive |
-| Engine | Node.js / TypeScript, separate process, localhost IPC |
-| Core | Router + Worker + Event Bus + Async ReAct Loop + Watchdog |
+## Build and downloads
 
-## Build
-
-All distributions (APK, EXE, DMG, deb, rpm, arch) are built in parallel by [GitHub Actions](https://github.com/SandroneTeamDev/AgentFlows/actions).
-Download the latest artifacts from the most recent successful **Build** run.
+Build status, diagnostic logs, and downloadable artifacts are available in [GitHub Actions](https://github.com/SandroneTeamDev/AgentFlows/actions). Open a successful **Build** run and use its artifacts. A failed run is not a release.
 
 ## License
 
-AGPL-3.0
+[AGPL-3.0](LICENSE)

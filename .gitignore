@@ -17,4 +17,7 @@ coverage/
 tmp/
 *.tsbuildinfo
 .kotlin/
-shared/
+desktop/resources/common/engine/
+desktop/resources/common/runtime/
+artifacts/
+.gradle-local/

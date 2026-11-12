@@ -53,7 +53,7 @@ export class WorkerSessionImpl {
 
     const systemPrompt = this.buildSystemPrompt();
     const userPrompt = this.buildUserPrompt(trigger);
-    let messages: { role: string; content: unknown }[] = [
+    const messages: Parameters<ModelProvider["invoke"]>[1] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ];
@@ -70,7 +70,11 @@ export class WorkerSessionImpl {
         messages.push({
           role: "assistant",
           content: response.text,
-          tool_calls: response.toolCalls,
+          tool_calls: response.toolCalls.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.args) },
+          })),
         });
 
         for (const tc of response.toolCalls) {

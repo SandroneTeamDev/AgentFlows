@@ -11,7 +11,7 @@ export interface WatchdogCallback {
 }
 
 export class Watchdog {
-  private state: WatchdogState;
+  private currentState: WatchdogState;
   private timer: ReturnType<typeof setInterval> | undefined;
   private callback: WatchdogCallback;
   private lastWorkerTimestamps = new Map<string, number>();
@@ -20,7 +20,7 @@ export class Watchdog {
   constructor(callback: WatchdogCallback, intervalMs: number, staleThresholdMs: number = 60_000) {
     this.callback = callback;
     this.staleThresholdMs = staleThresholdMs;
-    this.state = {
+    this.currentState = {
       intervalMs,
       lastHeartbeat: Date.now(),
       alerts: [],
@@ -30,7 +30,7 @@ export class Watchdog {
 
   start(): void {
     this.stop();
-    this.timer = setInterval(() => this.tick(), this.state.intervalMs);
+    this.timer = setInterval(() => this.tick(), this.currentState.intervalMs);
   }
 
   stop(): void {
@@ -45,32 +45,32 @@ export class Watchdog {
   }
 
   get state(): WatchdogState {
-    return this.state;
+    return this.currentState;
   }
 
   private tick(): void {
-    this.state.lastHeartbeat = Date.now();
+    this.currentState.lastHeartbeat = Date.now();
     const now = Date.now();
 
     for (const [workerId, lastActive] of this.lastWorkerTimestamps) {
       if (now - lastActive > this.staleThresholdMs) {
         const alert = `worker ${workerId} stalled for ${Math.round((now - lastActive) / 1000)}s`;
-        this.state.alerts.push(alert);
-        this.state.healthy = false;
+        this.currentState.alerts.push(alert);
+        this.currentState.healthy = false;
         this.callback({ type: "alert", message: alert, workerId });
       }
     }
 
-    if (this.state.alerts.length === 0) {
-      this.state.healthy = true;
+    if (this.currentState.alerts.length === 0) {
+      this.currentState.healthy = true;
     }
 
-    this.callback({ type: "heartbeat", ok: this.state.healthy });
+    this.callback({ type: "heartbeat", ok: this.currentState.healthy });
   }
 
   applyFix(description: string): void {
-    this.state.alerts = [];
-    this.state.healthy = true;
+    this.currentState.alerts = [];
+    this.currentState.healthy = true;
     this.callback({ type: "fix_applied", description });
   }
 }

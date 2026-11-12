@@ -7,37 +7,34 @@ on:
 
 jobs:
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      image: gradle/gradle:8.5-jdk17
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Find and setup Android SDK
+      - name: Install Android SDK
         run: |
-          SDK=""
-          for d in /usr/local/lib/android/sdk $ANDROID_HOME $ANDROID_SDK_ROOT $HOME/Android/Sdk; do
-            if [ -d "$d/platforms" ]; then SDK="$d"; break; fi
-          done
-          if [ -z "$SDK" ]; then
-            SDK=$HOME/android-sdk
-            mkdir -p "$SDK" && cd "$SDK"
-            curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip | unzip -q -
-            [ -d cmdline-tools/bin ] && { mkdir -p cmdline-tools/latest && mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/latest/ 2>/dev/null; }
-            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          fi
-          echo "sdk.dir=$SDK" > android/local.properties
-
-      - name: Install Gradle
-        run: |
-          curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/g.zip
-          unzip -q /tmp/g.zip -d /opt/
-          echo "/opt/gradle-8.5/bin" >> "$GITHUB_PATH"
+          apt-get update && apt-get install -y openjdk-17-jdk unzip zip > /dev/null 2>&1
+          mkdir -p /opt/android-sdk/cmdline-tools
+          cd /opt/android-sdk
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip | unzip -q -
+          mv cmdline-tools tmp-ct
+          mkdir -p cmdline-tools
+          mv tmp-ct cmdline-tools/latest
+          export ANDROID_HOME=/opt/android-sdk
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
+          echo "sdk.dir=$ANDROID_HOME" > /android/local.properties
 
       - name: Build
-        working-directory: android
-        run: |
-          gradle :app:assembleDebug --no-daemon
+        working-directory: /android
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentflows-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

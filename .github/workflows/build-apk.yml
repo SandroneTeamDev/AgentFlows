@@ -30,9 +30,10 @@ concurrency:
 jobs:
   package:
     name: Build ${{ matrix.format }}
-    if: ${{ inputs.only == '' || inputs.only == matrix.format }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      BUILD: ${{ inputs.only == '' || inputs.only == matrix.format }}
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -66,30 +67,37 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - if: ${{ env.BUILD == 'true' }}
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - if: ${{ env.BUILD == 'true' }}
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: actions/setup-node@v4
+      - if: ${{ env.BUILD == 'true' }}
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: engine/package-lock.json
 
-      - uses: actions/setup-python@v5
+      - if: ${{ env.BUILD == 'true' }}
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - uses: android-actions/setup-android@v3
+      - if: ${{ env.BUILD == 'true' }}
+        uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - if: ${{ env.BUILD == 'true' }}
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Verify SDK and wrapper inputs
+        if: ${{ env.BUILD == 'true' }}
         run: |
           test -f gradle/wrapper/gradle-wrapper.jar
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
@@ -98,6 +106,7 @@ jobs:
           cat gradle/wrapper/gradle-wrapper.properties
 
       - name: Build and test engine
+        if: ${{ env.BUILD == 'true' }}
         working-directory: engine
         run: |
           set -o pipefail
@@ -107,36 +116,37 @@ jobs:
           npm run build 2>&1 | tee engine-build.log
 
       - name: Prepare native engine runtime
-        if: matrix.format != 'apk'
+        if: ${{ env.BUILD == 'true' && matrix.format != 'apk' }}
         run: |
           npm prune --omit=dev --prefix engine
           python scripts/package-runtime.py
 
       - name: Install Linux packaging tools
-        if: runner.os == 'Linux' && matrix.format != 'apk'
+        if: ${{ env.BUILD == 'true' && runner.os == 'Linux' && matrix.format != 'apk' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y rpm fakeroot zstd
 
       - name: Test shared interface and build
-        if: runner.os != 'Windows'
+        if: ${{ env.BUILD == 'true' && runner.os != 'Windows' }}
         run: |
           set -o pipefail
           chmod +x gradlew
           ./gradlew :shared:desktopTest '${{ matrix.task }}' --no-daemon --stacktrace --console=plain 2>&1 | tee gradle-build.log
 
       - name: Test shared interface and build on Windows
-        if: runner.os == 'Windows'
+        if: ${{ env.BUILD == 'true' && runner.os == 'Windows' }}
         shell: pwsh
         run: |
           & .\gradlew.bat :shared:desktopTest '${{ matrix.task }}' --no-daemon --stacktrace --console=plain 2>&1 | Tee-Object -FilePath gradle-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create Arch package
-        if: matrix.format == 'arch'
+        if: ${{ env.BUILD == 'true' && matrix.format == 'arch' }}
         run: python scripts/package-arch.py
 
       - name: Upload build artifact
+        if: ${{ env.BUILD == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: agentflows-${{ matrix.format }}
@@ -144,7 +154,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload diagnostics
-        if: always()
+        if: ${{ env.BUILD == 'true' && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: diagnostics-${{ matrix.format }}

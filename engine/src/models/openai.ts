@@ -1,4 +1,4 @@
-import type { ModelProvider, ModelResponse, ToolSchema, ToolCallRequest } from "./provider.js";
+import type { ModelProvider, ModelResponse, ToolSchema, ToolCallRequest } from "./base.js";
 
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;

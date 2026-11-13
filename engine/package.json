@@ -18,18 +18,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
     "chokidar": "^3.6.0",
-    "fastify": "^4.28.0",
-    "ws": "^8.18.0",
-    "zod": "^3.23.0",
-    "playwright-core": "^1.46.0",
+    "dotenv": "^16.4.0",
     "execa": "^8.0.0",
+    "fastify": "^4.28.0",
+    "playwright-core": "^1.46.0",
     "uuid": "^9.0.0",
-    "dotenv": "^16.4.0"
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@fastify/type-provider-typebox": "^4.0.0",
+    "@sinonjs/fake-timers": "^11.2.2",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
     "eslint": "^9.0.0",

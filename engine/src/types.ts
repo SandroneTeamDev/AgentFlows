@@ -12,7 +12,8 @@ export type TriggerSource =
   | "github_webhook"
   | "email"
   | "calendar"
-  | "custom_webhook";
+  | "custom_webhook"
+  | "user_input";
 
 export interface Trigger {
   id: string;
@@ -33,7 +34,7 @@ export interface Thread {
 
 export interface WorkerSession {
   id: string;
-  agentRole: AgentRole;
+  agentRole: "worker" | "subagent";
   modelId: string;
   accessLevel: AccessLevel;
   worktree: string;
@@ -41,12 +42,18 @@ export interface WorkerSession {
   subscribedThreads: string[];
   status: "idle" | "running" | "blocked" | "done";
   taskId?: string;
+  parentWorkerId?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface RouterSession {
   id: string;
   modelId: string;
   activeWorkers: string[];
+  pendingTriggers: string[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ToolCall {
@@ -110,7 +117,7 @@ export interface WatchdogState {
 
 export interface ProviderConfig {
   id: string;
-  kind: "openai" | "anthropic" | "gemini" | "ollama" | "lm_studio" | "llama_cpp" | "mnn" | "custom";
+  kind: "openai" | "anthropic" | "gemini" | "ollama" | "llama_cpp" | "mnn" | "custom";
   baseUrl: string;
   apiKey?: string;
   models: string[];
@@ -138,7 +145,7 @@ export interface UsageRecord {
 
 export interface AgentFlowNode {
   id: string;
-  type: "trigger" | "router_decision" | "worker_start" | "tool_call" | "worker_done" | "error" | "watchdog_alert";
+  type: "trigger" | "router_decision" | "worker_start" | "tool_call" | "worker_done" | "error" | "watchdog_alert" | "speculative";
   label: string;
   data: Record<string, unknown>;
   children?: AgentFlowNode[];
@@ -160,4 +167,30 @@ export interface PluginManifest {
   entry: string;
   permissions: string[];
   icon?: string;
+}
+
+export interface EngineSnapshot {
+  connected: boolean;
+  modelConfigured: boolean;
+  router: RouterSession;
+  workers: WorkerSession[];
+  tasks: TaskRecord[];
+  flows: AgentFlowNode[];
+  watchdog: WatchdogState;
+  usage: UsageRecord[];
+  message: string;
+}
+
+export interface RpcRequest {
+  jsonrpc: "2.0";
+  id: string | number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+export interface RpcResponse {
+  jsonrpc: "2.0";
+  id: string | number | null;
+  result?: unknown;
+  error?: { code: number; message: string };
 }

@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { EventBus } from "./event-bus.js";
+import type { EventBus } from "../event-bus/index.js";
+import type { InlineRef } from "../types.js";
 import type {
-  Trigger,
-  RouterSession,
-  WorkerSession,
-  TaskRecord,
   AgentFlowNode,
-  InlineRef,
-} from "./types.js";
-import type { ModelProvider } from "../model/provider.js";
-import type { ModelRouter } from "../model/router.js";
+  ModelAssignment,
+  ProviderConfig,
+  RouterSession,
+  TaskRecord,
+  Trigger,
+  WorkerSession,
+} from "../types.js";
+import type { ModelProvider } from "../models/base.js";
+import type { ModelRouter } from "../models/router.js";
+import { InlineSpillManager } from "../memory/index.js";
 
 interface RouterConfig {
   modelId: string;
@@ -22,19 +25,29 @@ export class RouterLayer {
   private bus: EventBus;
   private modelRouter: ModelRouter;
   private pendingTriggers: Trigger[] = [];
-  private tasks: Map<string, TaskRecord> = new Map();
+  private tasks = new Map<string, TaskRecord>();
   private flowNodes: AgentFlowNode[] = [];
   private recallCache = new Map<string, InlineRef>();
   private config: RouterConfig;
+  private readonly memory: InlineSpillManager;
 
-  constructor(bus: EventBus, modelRouter: ModelRouter, config: RouterConfig) {
+  constructor(
+    bus: EventBus,
+    modelRouter: ModelRouter,
+    config: RouterConfig,
+    memory: InlineSpillManager,
+  ) {
     this.bus = bus;
     this.modelRouter = modelRouter;
     this.config = config;
+    this.memory = memory;
     this.session = {
       id: randomUUID(),
       modelId: config.modelId,
       activeWorkers: [],
+      pendingTriggers: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
   }
 
@@ -44,6 +57,8 @@ export class RouterLayer {
 
   handleTrigger(trigger: Trigger): void {
     this.pendingTriggers.push(trigger);
+    this.session.pendingTriggers.push(trigger.id);
+    this.session.updatedAt = Date.now();
     this.flowNodes.push({
       id: randomUUID(),
       type: "trigger",
@@ -58,6 +73,10 @@ export class RouterLayer {
 
     const batch = this.pendingTriggers.slice(0, this.config.batchSize);
     this.pendingTriggers.splice(0, batch.length);
+    this.session.pendingTriggers = this.session.pendingTriggers.filter(
+      (id) => !batch.some((t) => t.id === id),
+    );
+    this.session.updatedAt = Date.now();
 
     const provider = this.modelRouter.resolve(this.config.modelId);
     const decision = await this.routeBatch(batch, provider);
@@ -81,10 +100,7 @@ export class RouterLayer {
     provider: ModelProvider,
   ): Promise<{ tasks: { threadId: string; title: string; description: string }[] }> {
     const payload = triggers
-      .map(
-        (t) =>
-          `[${t.source}] ${JSON.stringify(t.payload, null, 0)}`,
-      )
+      .map((t) => `[${t.source}] ${JSON.stringify(t.payload, null, 0)}`)
       .join("\n---\n");
 
     const response = await provider.invoke(this.config.modelId, [
@@ -93,13 +109,10 @@ export class RouterLayer {
         content:
           "You are the router layer of a multi-agent system. " +
           "Decide which triggers require action and how to group them into tasks. " +
-          "Return JSON: {\"tasks\": [{\"threadId\": \"...\", \"title\": \"...\", \"description\": \"...\"}]} " +
-          "or {\"tasks\": []} if no action needed.",
+          'Return JSON: {"tasks": [{"threadId": "...", "title": "...", "description": "..."}]} ' +
+          'or {"tasks": []} if no action needed.',
       },
-      {
-        role: "user",
-        content: payload,
-      },
+      { role: "user", content: payload },
     ]);
 
     const parsed = JSON.parse(response.text) as {
@@ -124,26 +137,28 @@ export class RouterLayer {
       subscribedThreads: [task.threadId],
       status: "idle",
       taskId: task.title,
-    };
-
-    this.bus.registerWorker(worker);
-    this.session.activeWorkers.push(worker.id);
-
-    const taskRecord: TaskRecord = {
-      id: worker.id,
-      title: task.title,
-      status: "assigned",
-      assignedWorker: worker.id,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    this.tasks.set(worker.id, taskRecord);
+
+    this.bus.registerWorker(worker);
+    this.session.activeWorkers.push(workerId);
+
+    const taskRecord: TaskRecord = {
+      id: workerId,
+      title: task.title,
+      status: "assigned",
+      assignedWorker: workerId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    this.tasks.set(workerId, taskRecord);
 
     this.flowNodes.push({
       id: randomUUID(),
       type: "worker_start",
       label: task.title,
-      data: { workerId: worker.id, threadId: task.threadId },
+      data: { workerId, threadId: task.threadId },
       timestamp: Date.now(),
     });
 
@@ -154,15 +169,11 @@ export class RouterLayer {
     return this.recallCache.get(objectId);
   }
 
-  chainRecall(
-    startId: string,
-    depth: number = 3,
-  ): InlineRef[] {
+  chainRecall(startId: string, depth = 3): InlineRef[] {
     const results: InlineRef[] = [];
     const visited = new Set<string>();
-    const queue: { ref: InlineRef; d: number }[] = [
-      { ref: this.recallCache.get(startId)!, d: 0 },
-    ];
+    const start = this.recallCache.get(startId);
+    const queue: { ref: InlineRef; d: number }[] = start ? [{ ref: start, d: 0 }] : [];
 
     while (queue.length > 0) {
       const { ref, d } = queue.shift()!;
@@ -184,6 +195,7 @@ export class RouterLayer {
       summary,
       next: next.length > 0 ? next.map((id) => ({ id, summary: "" })) : undefined,
     });
+    this.memory.inline(objectId, summary, next);
   }
 
   spill(objectId: string, truncatedSummary: string): void {
@@ -191,6 +203,7 @@ export class RouterLayer {
       id: objectId,
       summary: `${truncatedSummary} [spilled - call read to get full content]`,
     });
+    this.memory.spill(objectId, truncatedSummary);
   }
 
   getFlowNodes(): AgentFlowNode[] {
@@ -212,9 +225,8 @@ export class RouterLayer {
       task.updatedAt = Date.now();
       task.result = result;
     }
-    this.session.activeWorkers = this.session.activeWorkers.filter(
-      (w) => w !== workerId,
-    );
+    this.session.activeWorkers = this.session.activeWorkers.filter((w) => w !== workerId);
+    this.session.updatedAt = Date.now();
     this.flowNodes.push({
       id: randomUUID(),
       type: "worker_done",
@@ -237,5 +249,22 @@ export class RouterLayer {
       data: { workerId },
       timestamp: Date.now(),
     });
+  }
+
+  getSession(): RouterSession {
+    return this.session;
+  }
+
+  getAssignment(): ModelAssignment {
+    return {
+      chatModel: this.config.modelId,
+      memoryModel: this.config.modelId,
+      summaryModel: this.config.modelId,
+      uiModel: this.config.modelId,
+    };
+  }
+
+  registerProviderConfig(config: ProviderConfig): void {
+    this.modelRouter.register({ provider: this.modelRouter.resolve(config.models[0] ?? config.id), config });
   }
 }

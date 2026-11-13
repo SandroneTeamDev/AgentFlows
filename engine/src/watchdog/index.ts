@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { AgentFlowNode, WatchdogState } from "./types.js";
+import type { AgentFlowNode, WatchdogState } from "../types.js";
 
-type WatchdogEvent =
+export type WatchdogEvent =
   | { type: "alert"; message: string; workerId?: string }
   | { type: "heartbeat"; ok: boolean }
   | { type: "fix_applied"; description: string };
 
-export interface WatchdogCallback {
-  (event: WatchdogEvent): void;
-}
+export type WatchdogCallback = (event: WatchdogEvent) => void;
 
 export class Watchdog {
   private currentState: WatchdogState;
@@ -17,7 +15,7 @@ export class Watchdog {
   private lastWorkerTimestamps = new Map<string, number>();
   private staleThresholdMs: number;
 
-  constructor(callback: WatchdogCallback, intervalMs: number, staleThresholdMs: number = 60_000) {
+  constructor(callback: WatchdogCallback, intervalMs: number, staleThresholdMs = 60_000) {
     this.callback = callback;
     this.staleThresholdMs = staleThresholdMs;
     this.currentState = {

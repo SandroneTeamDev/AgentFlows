@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { ToolRegistry, type ToolDefinition } from "../src/tools/registry.js";
-import { Watchdog } from "../src/core/watchdog.js";
-import { EventBus } from "../src/core/event-bus.js";
-import type { WorkerSession } from "../src/core/types.js";
+import { ToolRegistry } from "../src/tools/registry.js";
+import { Watchdog } from "../src/watchdog/index.js";
+import { EventBus } from "../src/event-bus/index.js";
+import type { WorkerSession } from "../src/types.js";
 
 const definition = (name: string, effect: ToolDefinition["effect"]): ToolDefinition => ({
   name, effect, description: name, parameters: { type: "object" }, run: async () => name,
@@ -46,7 +46,7 @@ it("delivers subscribed Thread events directly to a Worker", async () => {
   const thread = bus.createThread("task");
   const worker: WorkerSession = {
     id: "worker", agentRole: "worker", modelId: "model", accessLevel: "view", worktree: "workspace",
-    memoryPath: "memory.md", subscribedThreads: [thread.id], status: "idle",
+    memoryPath: "memory.md", subscribedThreads: [thread.id], status: "idle", createdAt: 1, updatedAt: 1,
   };
   const direct = vi.fn();
   const router = vi.fn();
@@ -58,3 +58,11 @@ it("delivers subscribed Thread events directly to a Worker", async () => {
   expect(direct).toHaveBeenCalledOnce();
   expect(router).not.toHaveBeenCalled();
 });
+
+interface ToolDefinition {
+  name: string;
+  effect: "read" | "write" | "execute";
+  description: string;
+  parameters: { type: string; properties?: Record<string, unknown>; required?: string[] };
+  run(args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
+}

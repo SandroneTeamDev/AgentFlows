@@ -1,13 +1,20 @@
 import { randomUUID } from "node:crypto";
-import type { EventBus } from "./event-bus.js";
-import type { Trigger, WorkerSession, ToolCall, AgentFlowNode } from "./types.js";
-import type { ModelProvider } from "../model/provider.js";
+import type { EventBus } from "../event-bus/index.js";
+import type { Trigger, WorkerSession, ToolCall, AgentFlowNode } from "../types.js";
+import type { ModelProvider } from "../models/base.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 interface WorkerConfig {
   modelId: string;
   maxSteps: number;
   accessLevel: "full" | "plan" | "view" | "workspace_write";
+}
+
+interface ModelMessage {
+  role: string;
+  content: unknown;
+  tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
 }
 
 export class WorkerSessionImpl {
@@ -53,7 +60,7 @@ export class WorkerSessionImpl {
 
     const systemPrompt = this.buildSystemPrompt();
     const userPrompt = this.buildUserPrompt(trigger);
-    const messages: Parameters<ModelProvider["invoke"]>[1] = [
+    const messages: ModelMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ];
@@ -113,7 +120,7 @@ export class WorkerSessionImpl {
             role: "tool",
             tool_call_id: tc.id,
             content: result.ok ? JSON.stringify(result.value) : `Error: ${result.value}`,
-          });
+          } as ModelMessage);
         }
         step++;
         continue;

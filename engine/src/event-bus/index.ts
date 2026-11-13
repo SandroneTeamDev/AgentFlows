@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Trigger, Thread, WorkerSession } from "./types.js";
+import type { Trigger, Thread, WorkerSession } from "../types.js";
 
 type Handler = (trigger: Trigger) => void | Promise<void>;
 
@@ -45,9 +45,7 @@ export class EventBus {
   subscribe(threadId: string, workerId: string): void {
     const thread = this.threads.get(threadId);
     if (!thread) return;
-    if (!thread.subscribers.includes(workerId)) {
-      thread.subscribers.push(workerId);
-    }
+    if (!thread.subscribers.includes(workerId)) thread.subscribers.push(workerId);
   }
 
   unsubscribe(threadId: string, workerId: string): void {
@@ -66,16 +64,12 @@ export class EventBus {
 
   async emit(trigger: Trigger): Promise<void> {
     const thread = this.threads.get(trigger.threadId);
-    if (thread) {
-      thread.triggers.push(trigger);
-    }
+    if (thread) thread.triggers.push(trigger);
 
     const subscriberSet = new Set<string>();
     if (thread) {
       for (const sub of thread.subscribers) {
-        if (this.workers.has(sub)) {
-          subscriberSet.add(sub);
-        }
+        if (this.workers.has(sub)) subscriberSet.add(sub);
       }
     }
 
@@ -84,9 +78,7 @@ export class EventBus {
         [...subscriberSet].map(async (wid) => {
           const set = this.handlers.get(wid);
           if (set) {
-            for (const h of set) {
-              await h(trigger);
-            }
+            for (const h of set) await h(trigger);
           }
         }),
       );

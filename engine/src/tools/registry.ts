@@ -1,5 +1,5 @@
-import type { AccessLevel } from "../core/types.js";
-import type { ToolSchema } from "../model/provider.js";
+import type { AccessLevel } from "../types.js";
+import type { ToolSchema } from "../models/base.js";
 
 export interface ToolDefinition extends ToolSchema {
   effect: "read" | "write" | "execute";

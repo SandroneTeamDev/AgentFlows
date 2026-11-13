@@ -1,5 +1,5 @@
-import type { ModelProvider } from "./provider.js";
-import type { ProviderConfig } from "../core/types.js";
+import type { ModelProvider } from "./base.js";
+import type { ProviderConfig } from "../types.js";
 
 interface RouterEntry {
   provider: ModelProvider;
@@ -52,20 +52,15 @@ export class ModelRouter {
   }
 
   getUsage(providerId?: string): number | number[] {
-    if (providerId) {
-      return this.usageCounter.get(providerId) ?? 0;
-    }
+    if (providerId) return this.usageCounter.get(providerId) ?? 0;
     return [...this.usageCounter.values()];
   }
 
   async routeWithFallback(
     modelId: string,
     messages: { role: string; content: unknown }[],
-  ): Promise<{ provider: ModelProvider; response: import("./provider.js").ModelResponse }> {
-    const chain = this.fallbackChain.length > 0
-      ? [modelId, ...this.fallbackChain]
-      : [modelId];
-
+  ): Promise<{ provider: ModelProvider; response: import("./base.js").ModelResponse }> {
+    const chain = this.fallbackChain.length > 0 ? [modelId, ...this.fallbackChain] : [modelId];
     let lastError: unknown;
     for (const mid of chain) {
       try {

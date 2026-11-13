@@ -1,4 +1,5 @@
-import type { WorkerSessionImpl } from "./worker.js";
+import type { WorkerSession } from "./types.js";
+import type { WorkerSessionImpl } from "./worker/index.js";
 
 type LoopCallback = (event: {
   type: "message" | "tool_start" | "tool_done" | "tool_error" | "done" | "error";

@@ -5,6 +5,20 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      only:
+        description: Build only this format (empty = all six in parallel)
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - apk
+          - exe
+          - deb
+          - rpm
+          - arch
+          - dmg
 
 permissions:
   contents: read
@@ -16,6 +30,7 @@ concurrency:
 jobs:
   package:
     name: Build ${{ matrix.format }}
+    if: ${{ inputs.only == '' || inputs.only == matrix.format }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:

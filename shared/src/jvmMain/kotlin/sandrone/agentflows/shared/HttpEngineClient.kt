@@ -2,8 +2,8 @@ package sandrone.agentflows.shared
 
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URL
 import java.net.Proxy
+import java.net.URL
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,18 +12,46 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 internal class HttpEngineClient(private val connection: suspend () -> EngineConnection) : EngineClient {
     private val counter = AtomicLong()
 
-    override suspend fun snapshot(): WorkspaceSnapshot = parseSnapshot(rpc("snapshot", JsonObject(emptyMap())))
+    override suspend fun snapshot(): WorkspaceSnapshot =
+        parseSnapshot(rpc("snapshot", JsonObject(emptyMap())))
 
-    override suspend fun submit(text: String) {
-        rpc("trigger.submit", buildJsonObject { put("text", text) })
+    override suspend fun submit(text: String): String {
+        val result = rpc("trigger.submit", buildJsonObject { put("text", text) })
+        return parseSimpleResult(result)
+    }
+
+    override suspend fun cancelTask(workerId: String) {
+        rpc("task.cancel", buildJsonObject { put("workerId", workerId) })
+    }
+
+    override suspend fun askWatchdog(question: String): String {
+        val result = rpc("watchdog.query", buildJsonObject { put("question", question) })
+        val obj = result.jsonObject
+        return obj["answer"]?.jsonPrimitive?.contentOrNull ?: obj.toString()
+    }
+
+    override suspend fun registerProvider(id: String, baseUrl: String, models: List<String>) {
+        rpc(
+            "model.register",
+            buildJsonObject {
+                put("config", buildJsonObject {
+                    put("id", id)
+                    put("baseUrl", baseUrl)
+                    put("kind", "openai")
+                    putJsonArray("models") { models.forEach { m -> put("item", JsonPrimitive(m)) } }
+                })
+            },
+        )
     }
 
     override fun close() = Unit
@@ -41,7 +69,7 @@ internal class HttpEngineClient(private val connection: suspend () -> EngineConn
         try {
             http.requestMethod = "POST"
             http.connectTimeout = 2000
-            http.readTimeout = 5000
+            http.readTimeout = 8000
             http.doOutput = true
             http.setRequestProperty("Content-Type", "application/json")
             http.setRequestProperty("Authorization", "Bearer ${descriptor.token}")

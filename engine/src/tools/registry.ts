@@ -1,9 +1,13 @@
 import type { AccessLevel } from "../types.js";
 import type { ToolSchema } from "../models/base.js";
 
+export interface ToolContext {
+  worktree: string;
+}
+
 export interface ToolDefinition extends ToolSchema {
   effect: "read" | "write" | "execute";
-  run(args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
+  run(args: Record<string, unknown>, signal?: AbortSignal, ctx?: ToolContext): Promise<unknown>;
 }
 
 export class ToolRegistry {
@@ -26,16 +30,22 @@ export class ToolRegistry {
       .map(({ name, description, parameters }) => ({ name, description, parameters }));
   }
 
-  async execute(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  async execute(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+    ctx?: ToolContext,
+  ): Promise<unknown> {
     signal?.throwIfAborted();
     const tool = this.tools.get(name);
     if (!tool) throw new Error(`Unknown tool: ${name}`);
     if (!this.allowed(tool)) throw new Error(`Tool denied by ${this.accessLevel} access: ${name}`);
-    return tool.run(args, signal);
+    return tool.run(args, signal, ctx);
   }
 
-  private allowed(tool: ToolDefinition): boolean {
+  allowed(tool: ToolDefinition): boolean {
     if (this.accessLevel === "full") return true;
+    if (this.accessLevel === "plan") return false;
     if (tool.effect === "read") return true;
     return this.accessLevel === "workspace_write" && tool.effect === "write";
   }

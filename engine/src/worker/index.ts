@@ -8,6 +8,15 @@ interface WorkerConfig {
   modelId: string;
   maxSteps: number;
   accessLevel: "full" | "plan" | "view" | "workspace_write";
+  onUsage?: (input: {
+    sessionId: string;
+    providerId: string;
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    cacheHits: number;
+    at: number;
+  }) => void;
 }
 
 interface ModelMessage {
@@ -72,6 +81,16 @@ export class WorkerSessionImpl {
         this.toolRegistry.schemas(),
         this.abortController.signal,
       );
+
+      this.config.onUsage?.({
+        sessionId: this.session.id,
+        providerId: this.provider.id,
+        model: this.config.modelId,
+        tokensIn: response.tokensIn,
+        tokensOut: response.tokensOut,
+        cacheHits: response.cacheReadTokens ?? 0,
+        at: Date.now(),
+      });
 
       if (response.toolCalls && response.toolCalls.length > 0) {
         messages.push({
@@ -183,7 +202,9 @@ export class WorkerSessionImpl {
       return { ok: true, value: { stopped: true } };
     }
     try {
-      const result = await this.toolRegistry.execute(tc.name, tc.args, signal);
+      const result = await this.toolRegistry.execute(tc.name, tc.args, signal, {
+        worktree: this.session.worktree,
+      });
       return { ok: true, value: result };
     } catch (err) {
       return { ok: false, value: err instanceof Error ? err.message : String(err) };
@@ -197,7 +218,9 @@ export class WorkerSessionImpl {
     signal: AbortSignal,
   ): Promise<void> {
     try {
-      const result = await this.toolRegistry.execute(toolName, args, signal);
+      const result = await this.toolRegistry.execute(toolName, args, signal, {
+        worktree: this.session.worktree,
+      });
       const tc = this.toolCalls.find((t) => t.id === toolCallId);
       if (tc) {
         tc.status = "done";

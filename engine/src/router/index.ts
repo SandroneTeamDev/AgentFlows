@@ -18,6 +18,15 @@ interface RouterConfig {
   modelId: string;
   batchSize: number;
   maxConcurrency: number;
+  onUsage?: (input: {
+    sessionId: string;
+    providerId: string;
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    cacheHits: number;
+    at: number;
+  }) => void;
 }
 
 export class RouterLayer {
@@ -103,6 +112,7 @@ export class RouterLayer {
       .map((t) => `[${t.source}] ${JSON.stringify(t.payload, null, 0)}`)
       .join("\n---\n");
 
+    const startedAt = Date.now();
     const response = await provider.invoke(this.config.modelId, [
       {
         role: "system",
@@ -114,6 +124,16 @@ export class RouterLayer {
       },
       { role: "user", content: payload },
     ]);
+
+    this.config.onUsage?.({
+      sessionId: this.session.id,
+      providerId: provider.id,
+      model: this.config.modelId,
+      tokensIn: response.tokensIn,
+      tokensOut: response.tokensOut,
+      cacheHits: response.cacheReadTokens ?? 0,
+      at: startedAt,
+    });
 
     const parsed = JSON.parse(response.text) as {
       tasks: { threadId: string; title: string; description: string }[];

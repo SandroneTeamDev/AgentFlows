@@ -62,6 +62,18 @@ export async function startEngine(dataDir: string, port = 0, engine?: AgentEngin
         return { jsonrpc: "2.0", id, result: target.watchdogState() };
       case "usage.list":
         return { jsonrpc: "2.0", id, result: target.listUsage() };
+      case "usage.summary": {
+        const range = params.range;
+        const allowed = ["today", "7d", "30d", "all"];
+        const selected = typeof range === "string" && allowed.includes(range) ? range : "7d";
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: target.usageSummary(selected as "today" | "7d" | "30d" | "all"),
+        };
+      }
+      case "usage.prices":
+        return { jsonrpc: "2.0", id, result: target.priceStatus() };
       case "memory.read":
         return { jsonrpc: "2.0", id, result: target.readMemory(String(params.path ?? "")) };
       case "model.register": {

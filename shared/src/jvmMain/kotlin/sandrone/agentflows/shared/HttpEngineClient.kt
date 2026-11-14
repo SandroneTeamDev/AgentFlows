@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -52,8 +53,24 @@ internal class HttpEngineClient(private val connection: suspend () -> EngineConn
     override suspend fun probeModels(): Boolean =
         parseProbeResult(rpc("model.probe", JsonObject(emptyMap())))
 
-    override suspend fun usageSummary(range: UsageRange): UsageSummary =
-        parseUsageSummary(rpc("usage.summary", buildJsonObject { put("range", range.wire) }))
+    override suspend fun usageSummary(range: UsageRange, granularity: UsageGranularity): UsageSummary =
+        parseUsageSummary(
+            rpc(
+                "usage.summary",
+                buildJsonObject {
+                    put("range", range.wire)
+                    put("granularity", granularity.wire)
+                },
+            ),
+        )
+
+    override suspend fun usageTools(range: UsageRange): List<UsageToolBucket> =
+        parseToolBuckets(rpc("usage.tools", buildJsonObject { put("range", range.wire) }))
+
+    override suspend fun usageExport(range: UsageRange, format: String): String {
+        val result = rpc("usage.export", buildJsonObject { put("range", range.wire); put("format", format) }).jsonObject
+        return result["content"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    }
 
     override fun close() = Unit
 

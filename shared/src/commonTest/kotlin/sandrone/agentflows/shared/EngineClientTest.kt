@@ -98,23 +98,34 @@ class EngineClientTest {
     fun parsesUsageSummaryTotalsAndBreakdowns() {
         val summary = parseUsageSummary(
             Json.parseToJsonElement(
-                """{"range":"7d",
-                   "totals":{"tokens":900,"tokensIn":600,"tokensOut":300,"cacheHits":120,"cost":1.25,"requests":3,"priced":false},
-                   "composition":{"input":600,"output":300,"cache":120},
-                   "byDay":[{"date":"2026-11-13","tokens":900,"cost":1.25,"requests":3}],
-                   "bySession":[{"sessionId":"s1","models":["gpt","local"],"tokens":900,"tokensIn":600,"tokensOut":300,"cost":1.25,"requests":3,"lastActivity":77}],
-                   "byModel":[{"model":"gpt","provider":"openai","tokens":900,"cost":1.25,"requests":3}],
-                   "heatmap":[{"date":"2026-11-13","tokens":900,"cost":1.25,"requests":3}]}""",
+                """{"range":"7d","granularity":"day",
+                   "totals":{"tokens":900,"tokensIn":600,"tokensOut":300,"cacheHits":120,"cacheWriteTokens":15,"cost":1.25,"actualCost":2.5,"requests":3,"failures":1,"priced":false},
+                   "composition":{"input":600,"output":300,"cacheRead":120,"cacheWrite":15},
+                   "costBreakdown":{"input":0.5,"output":0.6,"cacheRead":0.1,"cacheWrite":0.05},
+                   "byPoint":[{"key":"2026-11-13","label":"2026-11-13","tokens":900,"cost":1.25,"actualCost":2.5,"requests":3}],
+                   "bySession":[{"sessionId":"s1","role":"worker","models":["gpt","local"],"tokens":900,"tokensIn":600,"tokensOut":300,"cost":1.25,"actualCost":2.5,"requests":3,"failures":1,"toolCalls":4,"avgDurationMs":120,"lastActivity":77}],
+                   "byModel":[{"model":"gpt","provider":"openai","tokens":900,"cost":1.25,"actualCost":2.5,"requests":3,"priced":true}],
+                   "byRole":[{"key":"worker","label":"worker","tokens":900,"cost":1.25,"actualCost":2.5,"requests":3}],
+                   "byError":[{"category":"rate_limit","requests":1}],
+                   "heatmap":[{"date":"2026-11-13","tokens":900,"cost":1.25,"requests":3}],
+                   "statsUpdatedAt":12345}""",
             ),
         )
         assertEquals("7d", summary.range)
         assertEquals(900L, summary.totals.tokens)
-        assertEquals(1.25, summary.totals.cost)
+        assertEquals(2.5, summary.totals.actualCost)
         assertFalse(summary.priced)
-        assertEquals("2026-11-13", summary.byDay.single().date)
+        assertEquals(1, summary.totals.failures)
+        assertEquals(120L, summary.composition.cacheRead)
+        assertEquals(0.05, summary.costBreakdown.cacheWrite)
+        assertEquals("2026-11-13", summary.byPoint.single().key)
         assertEquals(listOf("gpt", "local"), summary.bySession.single().models)
+        assertEquals("worker", summary.bySession.single().role)
+        assertEquals(4, summary.bySession.single().toolCalls)
         assertEquals("openai", summary.byModel.single().provider)
-        assertEquals(3, summary.heatmap.single().requests)
+        assertEquals("worker", summary.byRole.single().key)
+        assertEquals("rate_limit", summary.byError.single().category)
+        assertEquals(12345L, summary.statsUpdatedAt)
     }
 
     @Test
@@ -125,6 +136,20 @@ class EngineClientTest {
         assertTrue(summary.priced)
         assertTrue(summary.bySession.isEmpty())
         assertTrue(summary.heatmap.isEmpty())
+        assertTrue(summary.byPoint.isEmpty())
+    }
+
+    @Test
+    fun parsesToolUsageBuckets() {
+        val tools = parseToolBuckets(
+            Json.parseToJsonElement(
+                """[{"tool":"read_file","calls":10,"failures":2,"avgDurationMs":15,"totalDurationMs":150}]""",
+            ),
+        )
+        assertEquals(1, tools.size)
+        assertEquals("read_file", tools.single().tool)
+        assertEquals(2, tools.single().failures)
+        assertEquals(15, tools.single().avgDurationMs)
     }
 
     @Test

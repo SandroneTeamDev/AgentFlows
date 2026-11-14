@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -14,13 +15,17 @@ internal data class EngineConnection(val port: Int, val token: String)
 
 interface EngineClient {
     suspend fun snapshot(): WorkspaceSnapshot
-    suspend fun submit(text: String)
+    suspend fun submit(text: String): String
+    suspend fun cancelTask(workerId: String)
+    suspend fun askWatchdog(question: String): String
+    suspend fun registerProvider(id: String, baseUrl: String, models: List<String>)
+    suspend fun probeModels(): Boolean
     fun close()
 }
 
 expect fun createEngineClient(): EngineClient
 
-data class FlowEntry(
+data class AgentFlowEntry(
     val id: String,
     val type: String,
     val label: String,
@@ -28,41 +33,133 @@ data class FlowEntry(
     val details: String,
 )
 
-data class TaskEntry(val id: String, val title: String, val status: String)
+data class WorkerEntry(
+    val id: String,
+    val status: String,
+)
+
+data class TaskEntry(
+    val id: String,
+    val title: String,
+    val status: String,
+)
+
+data class UsageEntry(
+    val sessionId: String,
+    val model: String,
+    val provider: String,
+    val tokensIn: Long,
+    val tokensOut: Long,
+    val cost: Double,
+    val timestamp: Long,
+)
+
+data class ProviderEntry(
+    val id: String,
+    val kind: String,
+    val baseUrl: String,
+    val models: List<String>,
+)
+
+data class WatchdogInfo(
+    val healthy: Boolean,
+    val alerts: List<String>,
+    val lastHeartbeat: Long,
+)
 
 data class WorkspaceSnapshot(
     val connected: Boolean = false,
     val modelConfigured: Boolean = false,
-    val flows: List<FlowEntry> = emptyList(),
+    val flows: List<AgentFlowEntry> = emptyList(),
+    val workers: List<WorkerEntry> = emptyList(),
     val tasks: List<TaskEntry> = emptyList(),
+    val usage: List<UsageEntry> = emptyList(),
+    val providers: List<ProviderEntry> = emptyList(),
+    val watchdog: WatchdogInfo = WatchdogInfo(true, emptyList(), 0),
+    val uptimeMs: Long = 0,
     val message: String = "Connecting to the local engine…",
 )
 
 internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
     val obj = element.jsonObject
-    val status = obj["status"] as? JsonObject
     val flows = (obj["flows"] as? JsonArray).orEmpty().map { node ->
         val item = node.jsonObject
-        FlowEntry(
+        AgentFlowEntry(
             id = item.string("id"),
             type = item.string("type"),
             label = item.string("label"),
-            timestamp = item["timestamp"]?.jsonPrimitive?.longOrNull ?: 0,
+            timestamp = item["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L,
             details = item["data"]?.toString() ?: "{}",
         )
+    }
+    val workers = (obj["workers"] as? JsonArray).orEmpty().map { node ->
+        val item = node.jsonObject
+        WorkerEntry(item.string("id"), item.string("status"))
     }
     val tasks = (obj["tasks"] as? JsonArray).orEmpty().map { node ->
         val item = node.jsonObject
         TaskEntry(item.string("id"), item.string("title"), item.string("status"))
     }
-    val configured = status?.get("modelConfigured")?.jsonPrimitive?.booleanOrNull ?: false
+    val usage = (obj["usage"] as? JsonArray).orEmpty().map { node ->
+        val item = node.jsonObject
+        UsageEntry(
+            sessionId = item.string("sessionId"),
+            model = item.string("model"),
+            provider = item.string("provider"),
+            tokensIn = item["tokensIn"]?.jsonPrimitive?.longOrNull ?: 0L,
+            tokensOut = item["tokensOut"]?.jsonPrimitive?.longOrNull ?: 0L,
+            cost = item["cost"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            timestamp = item["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L,
+        )
+    }
+    val providers = (obj["providers"] as? JsonArray).orEmpty().map { node ->
+        val item = node.jsonObject
+        ProviderEntry(
+            id = item.string("id"),
+            kind = item.string("kind"),
+            baseUrl = item.string("baseUrl"),
+            models = (item["models"] as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() },
+        )
+    }
+    val watchdogNode = obj["watchdog"] as? JsonObject
+    val watchdog = WatchdogInfo(
+        healthy = watchdogNode?.get("healthy")?.jsonPrimitive?.booleanOrNull ?: true,
+        alerts = (watchdogNode?.get("alerts") as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() },
+        lastHeartbeat = watchdogNode?.get("lastHeartbeat")?.jsonPrimitive?.longOrNull ?: 0L,
+    )
+    val configured = obj["modelConfigured"]?.jsonPrimitive?.booleanOrNull ?: false
     return WorkspaceSnapshot(
         connected = true,
         modelConfigured = configured,
         flows = flows,
+        workers = workers,
         tasks = tasks,
-        message = if (configured) "Local engine online" else "Local engine online · model not configured",
+        usage = usage,
+        providers = providers,
+        watchdog = watchdog,
+        uptimeMs = obj["uptimeMs"]?.jsonPrimitive?.longOrNull ?: 0L,
+        message = obj["message"]?.jsonPrimitive?.contentOrNull
+            ?: if (configured) "Local engine online" else "Local engine online · model not configured",
     )
+}
+
+internal fun parseSubmitResult(element: JsonElement): String {
+    val obj = element.jsonObject
+    val trigger = obj["triggerId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val state = obj["state"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    return if (state.isNotEmpty()) "$trigger|$state" else trigger
+}
+
+internal fun parseWatchdogAnswer(element: JsonElement): String {
+    val obj = element.jsonObject
+    return obj["answer"]?.jsonPrimitive?.contentOrNull
+        ?: obj["message"]?.jsonPrimitive?.contentOrNull
+        ?: ""
+}
+
+internal fun parseProbeResult(element: JsonElement): Boolean {
+    val obj = element.jsonObject
+    return obj["healthy"]?.jsonPrimitive?.booleanOrNull ?: false
 }
 
 private fun JsonObject.string(key: String): String =

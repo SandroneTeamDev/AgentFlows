@@ -19,6 +19,11 @@ kotlin {
             implementation(compose.ui)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            implementation("dev.chrisbanes.haze:haze:2.1.0")
+            implementation("dev.chrisbanes.haze:haze-blur:2.1.0")
+            implementation("dev.chrisbanes.haze:haze-blur-material3:2.1.0")
+            implementation("dev.chrisbanes.haze:haze-glass:2.1.0")
+            implementation("dev.chrisbanes.haze:haze-glass-material3:2.1.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

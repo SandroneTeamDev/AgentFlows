@@ -1,38 +1,26 @@
 package sandrone.agentflows.shared
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -44,25 +32,43 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private val Panels = listOf("Flows", "Chat", "Tasks", "Files", "Terminal", "Git", "MCP", "Plugins", "Usage", "Settings")
+import sandrone.agentflows.shared.ui.AgentIcons
+import sandrone.agentflows.shared.ui.AgentTab
+import sandrone.agentflows.shared.ui.ChatMessage
+import sandrone.agentflows.shared.ui.ChatPanel
+import sandrone.agentflows.shared.ui.FlowsPanel
+import sandrone.agentflows.shared.ui.MessageAuthor
+import sandrone.agentflows.shared.ui.Pill
+import sandrone.agentflows.shared.ui.SettingsPanel
+import sandrone.agentflows.shared.ui.StatusDot
+import sandrone.agentflows.shared.ui.UsagePanel
+import sandrone.agentflows.shared.ui.formatDuration
 
 @Composable
 fun AgentFlowsApp(client: EngineClient = remember { createEngineClient() }) {
+    val store = remember { createEffectPrefsStore() }
+    var prefs by remember { mutableStateOf(store.load()) }
     var snapshot by remember { mutableStateOf(WorkspaceSnapshot()) }
-    var selected by remember { mutableStateOf("Flows") }
+    var tab by remember { mutableStateOf(AgentTab.Chat) }
+    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var input by remember { mutableStateOf("") }
-    var sending by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var watchdogAnswer by remember { mutableStateOf<String?>(null) }
+    var watchdogBusy by remember { mutableStateOf(false) }
+    var probeResult by remember { mutableStateOf<String?>(null) }
+    var providerBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     DisposableEffect(client) {
         onDispose { client.close() }
     }
+
     LaunchedEffect(client) {
         while (true) {
             snapshot = try {
@@ -70,213 +76,216 @@ fun AgentFlowsApp(client: EngineClient = remember { createEngineClient() }) {
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                snapshot.copy(connected = false, message = "Local engine unavailable · no remote fallback")
+                snapshot.copy(connected = false, message = "Local engine unavailable")
             }
             delay(2000)
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val wide = maxWidth >= 840.dp
-        val showTaskPanel = maxWidth >= 1180.dp
-        Column(Modifier.fillMaxSize()) {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column {
-                        Text("AgentFlows", style = MaterialTheme.typography.headlineSmall)
-                        Text("Your local event-flow workspace", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text(
-                        if (snapshot.connected) "ONLINE" else "OFFLINE",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (snapshot.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                    )
+    fun updatePrefs(next: EffectPrefs) {
+        prefs = next
+        store.save(next)
+    }
+
+    fun send() {
+        val text = input.trim()
+        if (text.isEmpty() || busy) return
+        input = ""
+        messages = messages + ChatMessage(
+            id = randomToken(),
+            author = MessageAuthor.USER,
+            text = text,
+            timestamp = nowMillis(),
+        )
+        busy = true
+        scope.launch {
+            try {
+                val result = client.submit(text)
+                val triggerId = result.substringBefore('|').ifBlank { "unavailable" }
+                val state = result.substringAfter('|', "").ifBlank { "accepted" }
+                val body = if (state == "pending_configuration") {
+                    "Task recorded as a Trigger. The Router is waiting for a model before it dispatches a worker."
+                } else {
+                    "Trigger queued for the Router."
                 }
+                messages = messages + ChatMessage(
+                    id = randomToken(),
+                    author = MessageAuthor.ENGINE,
+                    text = body,
+                    status = state,
+                    detail = "{\n  \"triggerId\": \"$triggerId\",\n  \"state\": \"$state\"\n}",
+                    timestamp = nowMillis(),
+                )
+                snapshot = client.snapshot()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                messages = messages + ChatMessage(
+                    id = randomToken(),
+                    author = MessageAuthor.ENGINE,
+                    text = "Submission failed: ${error.message ?: "unknown error"}",
+                    status = "error",
+                    timestamp = nowMillis(),
+                )
+            } finally {
+                busy = false
             }
-            Row(Modifier.weight(1f)) {
-                if (wide) {
-                    Column(
-                        Modifier.width(192.dp).fillMaxHeight().padding(12.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Panels.forEach { name ->
-                            Surface(
-                                color = if (name == selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.background,
-                                shape = MaterialTheme.shapes.large,
-                                modifier = Modifier.fillMaxWidth().clickable { selected = name },
-                            ) {
-                                Text(name, Modifier.padding(horizontal = 20.dp, vertical = 14.dp), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+
+    EffectRoot {
+        AgentFlowsTheme {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= 840.dp
+                Column(Modifier.fillMaxSize()) {
+                    TopCapsule(snapshot, prefs, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    Row(Modifier.weight(1f)) {
+                        if (wide) {
+                            NavigationRail(containerColor = Color.Transparent) {
+                                Spacer(Modifier.weight(1f))
+                                AgentTab.entries.forEach { entry ->
+                                    NavigationRailItem(
+                                        selected = tab == entry,
+                                        onClick = { tab = entry },
+                                        icon = { Icon(iconFor(entry), null) },
+                                        label = { Text(entry.label) },
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                        Crossfade(targetState = tab, animationSpec = tween(MotionTokens.ContentMillis), label = "panel") { active ->
+                            Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 16.dp)) {
+                                when (active) {
+                                    AgentTab.Chat -> ChatPanel(
+                                        messages = messages,
+                                        snapshot = snapshot,
+                                        prefs = prefs,
+                                        input = input,
+                                        busy = busy,
+                                        onInput = { input = it },
+                                        onSend = { send() },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    AgentTab.Flows -> FlowsPanel(snapshot.flows, Modifier.fillMaxSize())
+                                    AgentTab.Usage -> UsagePanel(snapshot.usage, Modifier.fillMaxSize())
+                                    AgentTab.Settings -> SettingsPanel(
+                                        snapshot = snapshot,
+                                        prefs = prefs,
+                                        onPrefs = { updatePrefs(it) },
+                                        watchdogAnswer = watchdogAnswer,
+                                        watchdogBusy = watchdogBusy,
+                                        onAskWatchdog = { question ->
+                                            watchdogBusy = true
+                                            scope.launch {
+                                                watchdogAnswer = try {
+                                                    client.askWatchdog(question)
+                                                } catch (error: CancellationException) {
+                                                    throw error
+                                                } catch (error: Exception) {
+                                                    "Watchdog is unreachable: ${error.message ?: "unknown error"}"
+                                                }
+                                                watchdogBusy = false
+                                            }
+                                        },
+                                        onRegisterProvider = { id, baseUrl, models ->
+                                            providerBusy = true
+                                            scope.launch {
+                                                try {
+                                                    client.registerProvider(id, baseUrl, models.split(',').map { it.trim() }.filter { it.isNotEmpty() })
+                                                    probeResult = "Provider $id registered."
+                                                    snapshot = client.snapshot()
+                                                } catch (error: CancellationException) {
+                                                    throw error
+                                                } catch (error: Exception) {
+                                                    probeResult = "Registration failed: ${error.message ?: "unknown error"}"
+                                                }
+                                                providerBusy = false
+                                            }
+                                        },
+                                        onProbe = {
+                                            providerBusy = true
+                                            scope.launch {
+                                                probeResult = try {
+                                                    val healthy = client.probeModels()
+                                                    if (healthy) "Provider responded." else "Provider did not respond."
+                                                } catch (error: CancellationException) {
+                                                    throw error
+                                                } catch (error: Exception) {
+                                                    "Probe failed: ${error.message ?: "unknown error"}"
+                                                }
+                                                providerBusy = false
+                                            }
+                                        },
+                                        probeResult = probeResult,
+                                        providerBusy = providerBusy,
+                                        onCancelTask = { workerId ->
+                                            scope.launch {
+                                                try {
+                                                    client.cancelTask(workerId)
+                                                    snapshot = client.snapshot()
+                                                } catch (error: CancellationException) {
+                                                    throw error
+                                                } catch (_: Exception) {
+                                                    snapshot = snapshot.copy(connected = false, message = "Cancel request failed")
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (!wide) {
+                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                            AgentTab.entries.forEach { entry ->
+                                NavigationBarItem(
+                                    selected = tab == entry,
+                                    onClick = { tab = entry },
+                                    icon = { Icon(iconFor(entry), null) },
+                                    label = { Text(entry.label) },
+                                )
                             }
                         }
                     }
                 }
-                Column(Modifier.weight(1f).fillMaxHeight().padding(if (wide) 24.dp else 16.dp)) {
-                    Text(selected, style = MaterialTheme.typography.headlineMedium)
-                    Text(snapshot.message, Modifier.padding(top = 6.dp, bottom = 20.dp), style = MaterialTheme.typography.bodySmall)
-                    when (selected) {
-                        "Flows", "Chat" -> Timeline(snapshot.flows, Modifier.weight(1f))
-                        "Tasks" -> TaskPanel(snapshot.tasks, Modifier.weight(1f))
-                        "Settings" -> SettingsPanel(snapshot, Modifier.weight(1f))
-                        else -> PreviewPanel(selected, Modifier.weight(1f))
-                    }
-                    if (selected == "Flows" || selected == "Chat") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OutlinedTextField(
-                                value = input,
-                                onValueChange = { input = it },
-                                label = { Text("Send a task to the Router") },
-                                modifier = Modifier.weight(1f),
-                                maxLines = 4,
-                                shape = MaterialTheme.shapes.large,
-                                enabled = snapshot.connected && !sending,
-                            )
-                            Button(
-                                enabled = snapshot.connected && !sending && input.isNotBlank(),
-                                onClick = {
-                                    val text = input.trim()
-                                    sending = true
-                                    scope.launch {
-                                        try {
-                                            client.submit(text)
-                                            input = ""
-                                            snapshot = client.snapshot()
-                                        } catch (error: CancellationException) {
-                                            throw error
-                                        } catch (_: Exception) {
-                                            snapshot = snapshot.copy(message = "Task submission failed · input preserved")
-                                        } finally {
-                                            sending = false
-                                        }
-                                    }
-                                },
-                            ) { Text(if (sending) "Sending" else "Send") }
-                        }
-                    }
-                }
-                if (wide && showTaskPanel && selected != "Tasks") {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier.width(280.dp).fillMaxHeight(),
-                    ) {
-                        Column(Modifier.padding(20.dp)) {
-                            Text("Worker tasks", style = MaterialTheme.typography.titleLarge)
-                            TaskPanel(snapshot.tasks, Modifier.padding(top = 16.dp))
-                        }
-                    }
-                }
-            }
-            if (!wide) {
-                NavigationBar {
-                    listOf("Flows", "Chat", "Tasks", "Settings").forEach { name ->
-                        NavigationBarItem(
-                            selected = selected == name,
-                            onClick = { selected = name },
-                            icon = { Text(name.take(1), style = MaterialTheme.typography.titleMedium) },
-                            label = { Text(name) },
-                        )
-                    }
-                }
             }
         }
     }
 }
 
 @Composable
-private fun Timeline(flows: List<FlowEntry>, modifier: Modifier = Modifier) {
-    if (flows.isEmpty()) {
-        EmptyPanel("No events yet", "Triggers, Router decisions, and Worker results will appear here. No simulated tasks are shown.", modifier)
-        return
-    }
-    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(flows.asReversed(), key = { it.id }) { entry -> FlowCard(entry) }
-    }
-}
-
-@Composable
-private fun FlowCard(entry: FlowEntry) {
-    var expanded by remember(entry.id) { mutableStateOf(false) }
-    Card(
-        onClick = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        shape = MaterialTheme.shapes.large,
+private fun TopCapsule(snapshot: WorkspaceSnapshot, prefs: EffectPrefs, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(30.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .effectSurface(prefs, MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(Modifier.padding(18.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(entry.type.replace('_', ' ').uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(if (expanded) "Hide" else "Inspect", style = MaterialTheme.typography.labelSmall)
-            }
-            Text(entry.label, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn() + expandVertically(spring(stiffness = Spring.StiffnessLow)),
-                exit = fadeOut() + shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)),
-            ) {
-                Column {
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                    Text(entry.details, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                }
-            }
+        Icon(AgentIcons.Wave, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text("AgentFlows", style = MaterialTheme.typography.titleMedium)
+            Text(
+                snapshot.message,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
+        if (snapshot.modelConfigured) Pill("model ready") else Pill("model off")
+        Pill(formatDuration(snapshot.uptimeMs))
+        StatusDot(snapshot.connected)
     }
 }
 
-@Composable
-private fun TaskPanel(tasks: List<TaskEntry>, modifier: Modifier = Modifier) {
-    if (tasks.isEmpty()) {
-        EmptyPanel("No active Workers", "Tasks are created by the Router after a model has been configured.", modifier)
-        return
-    }
-    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(tasks, key = { it.id }) { task ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(task.title, style = MaterialTheme.typography.titleSmall)
-                    Text(task.status.uppercase(), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsPanel(snapshot: WorkspaceSnapshot, modifier: Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Local runtime", style = MaterialTheme.typography.titleMedium)
-                Text(snapshot.message)
-                Text("State stays on this device. An offline engine is never silently replaced by a hosted service.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Alpha preview", style = MaterialTheme.typography.titleMedium)
-                Text("Provider settings, secure key storage, and device-runtime installation are still being connected.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewPanel(name: String, modifier: Modifier) {
-    EmptyPanel(name, "This panel is not connected in the current preview. Its presence does not grant tool permissions or imply implementation is complete.", modifier)
-}
-
-@Composable
-private fun EmptyPanel(title: String, detail: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(detail, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+private fun iconFor(tab: AgentTab) = when (tab) {
+    AgentTab.Chat -> sandrone.agentflows.shared.ui.AgentIcons.Chat
+    AgentTab.Flows -> sandrone.agentflows.shared.ui.AgentIcons.Bolt
+    AgentTab.Usage -> sandrone.agentflows.shared.ui.AgentIcons.Chart
+    AgentTab.Settings -> sandrone.agentflows.shared.ui.AgentIcons.Settings
 }

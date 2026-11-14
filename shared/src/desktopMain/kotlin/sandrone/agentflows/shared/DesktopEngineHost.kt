@@ -2,8 +2,8 @@ package sandrone.agentflows.shared
 
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URL
 import java.net.Proxy
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -69,6 +69,21 @@ private object DesktopEngineHost {
             false
         }
     }
+
+    fun effectStore(): EffectPrefsStore {
+        val file = File(dataDir, "effect-prefs.json")
+        return object : EffectPrefsStore {
+            override fun load(): EffectPrefs =
+                if (file.isFile) decodeEffectPrefs(file.readText()) else EffectPrefs()
+
+            override fun save(prefs: EffectPrefs) {
+                file.parentFile?.mkdirs()
+                file.writeText(prefs.encode())
+            }
+        }
+    }
 }
 
 actual fun createEngineClient(): EngineClient = HttpEngineClient { DesktopEngineHost.connection() }
+
+actual fun createEffectPrefsStore(): EffectPrefsStore = DesktopEngineHost.effectStore()

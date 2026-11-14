@@ -1,11 +1,11 @@
 plugins {
     id("com.android.application") version "8.9.2" apply false
     id("com.android.library") version "8.9.2" apply false
-    kotlin("multiplatform") version "2.2.0" apply false
-    kotlin("android") version "2.2.0" apply false
-    kotlin("jvm") version "2.2.0" apply false
-    id("org.jetbrains.compose") version "1.9.0" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.0" apply false
+    kotlin("multiplatform") version "2.4.21" apply false
+    kotlin("android") version "2.4.21" apply false
+    kotlin("jvm") version "2.4.21" apply false
+    id("org.jetbrains.compose") version "1.12.2" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21" apply false
 }
 
 val releaseVersion = Regex("\\*\\*v([0-9]+\\.[0-9]+\\.[0-9]+-rc[0-9]+-alpha[0-9]+)")

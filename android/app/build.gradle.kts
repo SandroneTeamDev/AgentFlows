@@ -1,13 +1,12 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "sandrone.agentflows.android"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "sandrone.agentflows.android"

@@ -1,14 +1,19 @@
 plugins {
     kotlin("multiplatform")
-    id("com.android.library")
+    id("com.android.kotlin.multiplatform.library")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 kotlin {
-    androidTarget()
-    jvm("desktop")
     jvmToolchain(17)
+    jvm("desktop")
+
+    androidLibrary {
+        namespace = "sandrone.agentflows.shared"
+        compileSdk = 37
+        minSdk = 29
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -34,17 +39,5 @@ kotlin {
         val desktopMain by getting {
             kotlin.srcDir("src/jvmMain/kotlin")
         }
-    }
-}
-
-android {
-    namespace = "sandrone.agentflows.shared"
-    compileSdk = 35
-    defaultConfig {
-        minSdk = 29
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 }

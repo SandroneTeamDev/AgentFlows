@@ -133,8 +133,8 @@ fun AgentFlowsApp(client: EngineClient = remember { createEngineClient() }) {
         }
     }
 
-    EffectRoot {
-        AgentFlowsTheme {
+    AgentFlowsTheme {
+        EffectRoot {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth >= 840.dp
                 Column(Modifier.fillMaxSize()) {

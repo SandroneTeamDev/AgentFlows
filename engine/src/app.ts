@@ -84,6 +84,9 @@ export class AgentEngine {
         batchSize: 8,
         maxConcurrency: 4,
         onUsage: (input) => this.recorder?.record(input),
+        onWorkerSpawned: (session) => {
+          this.spawnWorker(session);
+        },
       },
       new InlineSpillManager(),
     );
@@ -112,6 +115,7 @@ export class AgentEngine {
       if (!this.router) return;
       this.router.handleTrigger(trigger);
       await this.router.flush();
+      this.dispatchToWorkers(trigger);
     });
 
     (this as { ready: boolean }).ready = true;
@@ -253,6 +257,46 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
     });
     this.workers.set(session.id, worker);
     return worker;
+  }
+
+  private dispatchToWorkers(trigger: Trigger): void {
+    for (const worker of this.workers.values()) {
+      if (this.loops.get(worker.id)?.isActive()) continue;
+      const session = this.bus.getWorker(worker.id);
+      if (!session) continue;
+      if (!session.subscribedThreads.includes(trigger.threadId)) continue;
+      const loop = new AsyncReActLoop(worker, (event) => this.onLoopEvent(worker.id, event));
+      this.trackLoop(worker.id, loop);
+      loop.start(trigger);
+    }
+  }
+
+  private onLoopEvent(
+    workerId: string,
+    event: { type: string; payload: unknown },
+  ): void {
+    if (event.type === "done") {
+      this.router?.onWorkerComplete(workerId, event.payload);
+      this.store?.append({
+        id: randomUUID(),
+        type: "worker_done",
+        label: "Worker finished",
+        data: { workerId },
+        timestamp: Date.now(),
+      });
+      return;
+    }
+    if (event.type === "error") {
+      const message = String(event.payload);
+      this.router?.onWorkerError(workerId, message);
+      this.store?.append({
+        id: randomUUID(),
+        type: "error",
+        label: message,
+        data: { workerId },
+        timestamp: Date.now(),
+      });
+    }
   }
 
   trackLoop(workerId: string, loop: AsyncReActLoop): void {

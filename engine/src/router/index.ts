@@ -27,6 +27,7 @@ interface RouterConfig {
     cacheHits: number;
     at: number;
   }) => void;
+  onWorkerSpawned?: (session: WorkerSession) => void;
 }
 
 export class RouterLayer {
@@ -162,6 +163,7 @@ export class RouterLayer {
     };
 
     this.bus.registerWorker(worker);
+    this.config.onWorkerSpawned?.(worker);
     this.session.activeWorkers.push(workerId);
 
     const taskRecord: TaskRecord = {

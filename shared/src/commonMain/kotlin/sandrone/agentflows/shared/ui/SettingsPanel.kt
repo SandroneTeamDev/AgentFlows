@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import sandrone.agentflows.shared.EffectMode
 import sandrone.agentflows.shared.EffectPrefs
 import sandrone.agentflows.shared.WorkspaceSnapshot
-import sandrone.agentflows.shared.formatDuration
 
 @Composable
 fun SettingsPanel(
@@ -83,9 +82,9 @@ private fun AppearanceCard(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit) {
         icon = AgentIcons.Settings,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SelectablePill("Off", prefs.mode == EffectMode.DISABLED) { onPrefs(prefs.copy(mode = EffectMode.DISABLED)) }
-            SelectablePill("Blur", prefs.mode == EffectMode.BLUR) { onPrefs(prefs.copy(mode = EffectMode.BLUR)) }
-            SelectablePill("Glass", prefs.mode == EffectMode.GLASS) { onPrefs(prefs.copy(mode = EffectMode.GLASS)) }
+            SelectablePill("Off", prefs.mode == EffectMode.DISABLED, onClick = { onPrefs(prefs.copy(mode = EffectMode.DISABLED)) })
+            SelectablePill("Blur", prefs.mode == EffectMode.BLUR, onClick = { onPrefs(prefs.copy(mode = EffectMode.BLUR)) })
+            SelectablePill("Glass", prefs.mode == EffectMode.GLASS, onClick = { onPrefs(prefs.copy(mode = EffectMode.GLASS)) })
         }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -3,7 +3,7 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
-import type { AgentFlowNode, TaskRecord, UsageRecord, WorkerSession } from "../types.js";
+import type { AgentFlowNode, SessionState, TaskRecord, UsageRecord, WorkerSession } from "../types.js";
 
 export class EventStore {
   private readonly db: DatabaseSyncType;
@@ -36,6 +36,16 @@ export class EventStore {
         cache_hits INTEGER NOT NULL,
         cost REAL NOT NULL,
         timestamp INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        context TEXT NOT NULL,
+        tool_calls TEXT NOT NULL,
+        subscriptions TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS workers (
         id TEXT PRIMARY KEY,
@@ -145,6 +155,76 @@ export class EventStore {
       cacheHits: row.cache_hits,
       cost: row.cost,
       timestamp: row.timestamp,
+    }));
+  }
+
+  upsertSession(state: SessionState): void {
+    this.db
+      .prepare(
+        "INSERT INTO sessions (id, role, model_id, context, tool_calls, subscriptions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+          "ON CONFLICT(id) DO UPDATE SET role=excluded.role, model_id=excluded.model_id, context=excluded.context, tool_calls=excluded.tool_calls, subscriptions=excluded.subscriptions, updated_at=excluded.updated_at",
+      )
+      .run(
+        state.id,
+        state.role,
+        state.modelId,
+        JSON.stringify(state.context),
+        JSON.stringify(state.toolCalls),
+        JSON.stringify(state.subscriptions),
+        state.createdAt,
+        state.updatedAt,
+      );
+  }
+
+  getSession(id: string): SessionState | undefined {
+    const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as
+      | {
+          id: string;
+          role: string;
+          model_id: string;
+          context: string;
+          tool_calls: string;
+          subscriptions: string;
+          created_at: number;
+          updated_at: number;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      role: row.role as SessionState["role"],
+      modelId: row.model_id,
+      context: JSON.parse(row.context),
+      toolCalls: JSON.parse(row.tool_calls),
+      subscriptions: JSON.parse(row.subscriptions),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  listSessions(limit = 50): SessionState[] {
+    const count = Math.min(500, Math.max(1, Math.trunc(limit)));
+    const rows = this.db
+      .prepare("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?")
+      .all(count) as {
+      id: string;
+      role: string;
+      model_id: string;
+      context: string;
+      tool_calls: string;
+      subscriptions: string;
+      created_at: number;
+      updated_at: number;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      role: row.role as SessionState["role"],
+      modelId: row.model_id,
+      context: JSON.parse(row.context),
+      toolCalls: JSON.parse(row.tool_calls),
+      subscriptions: JSON.parse(row.subscriptions),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     }));
   }
 

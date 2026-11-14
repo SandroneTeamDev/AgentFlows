@@ -74,6 +74,35 @@ export async function startEngine(dataDir: string, port = 0, engine?: AgentEngin
       }
       case "usage.prices":
         return { jsonrpc: "2.0", id, result: target.priceStatus() };
+      case "model.catalog":
+        return { jsonrpc: "2.0", id, result: target.searchCatalog({
+          type: typeof params.type === "string" ? (params.type as never) : undefined,
+          provider: typeof params.provider === "string" ? params.provider : undefined,
+          query: typeof params.query === "string" ? params.query : undefined,
+          reasoning: params.reasoning === true,
+          minContext: typeof params.minContext === "number" ? params.minContext : undefined,
+          limit: typeof params.limit === "number" ? params.limit : undefined,
+        }) };
+      case "model.capabilities": {
+        const provider = params.provider;
+        const model = params.model;
+        if (typeof provider !== "string" || typeof model !== "string") {
+          return fail(-32602, "provider and model are required");
+        }
+        return { jsonrpc: "2.0", id, result: target.modelCapabilities(provider, model) };
+      }
+      case "model.catalogStatus":
+        return { jsonrpc: "2.0", id, result: target.catalogStatus() };
+      case "session.list":
+        return { jsonrpc: "2.0", id, result: target.listSessions() };
+      case "session.get": {
+        const sessionId = params.id;
+        if (typeof sessionId !== "string" || !sessionId) return fail(-32602, "id is required");
+        const found = target.getSession(sessionId);
+        return found
+          ? { jsonrpc: "2.0", id, result: found }
+          : fail(-32604, "session not found");
+      }
       case "memory.read":
         return { jsonrpc: "2.0", id, result: target.readMemory(String(params.path ?? "")) };
       case "model.register": {

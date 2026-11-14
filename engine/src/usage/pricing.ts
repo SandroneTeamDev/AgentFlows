@@ -10,6 +10,7 @@ export interface PriceEntry {
   input: number;
   output: number;
   cacheRead?: number;
+  cacheWrite?: number;
   peak?: PeakRule;
 }
 
@@ -24,6 +25,17 @@ export interface LoadedPrices {
   error?: string;
 }
 
+export interface CostBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  actual: number;
+  multiplier: number;
+  priced: boolean;
+}
+
 const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 const toMinutes = (value: string): number => {
@@ -31,12 +43,26 @@ const toMinutes = (value: string): number => {
   return Number(hours) * 60 + Number(minutes ?? 0);
 };
 
-export function multiplierFor(entry: PriceEntry, at: number): number {
+export interface CalendarRules {
+  isOffDay(at: number): boolean;
+  isMakeupWorkday(at: number): boolean;
+}
+
+export function multiplierFor(entry: PriceEntry, at: number, calendar?: CalendarRules): number {
   const rule = entry.peak;
   if (!rule || rule.windows.length === 0) return 1;
+
   const date = new Date(at);
   const day = DAY_NAMES[date.getUTCDay()];
-  if (rule.days && rule.days.length > 0 && !rule.days.includes(day)) return 1;
+
+  if (rule.days && rule.days.length > 0) {
+    const namedDay = rule.days.includes(day);
+    const makeup = calendar?.isMakeupWorkday(at) ?? false;
+    const holiday = calendar?.isOffDay(at) ?? false;
+    if (holiday) return 1;
+    if (!namedDay && !makeup) return 1;
+  }
+
   const minutes = date.getUTCHours() * 60 + date.getUTCMinutes();
   for (const [start, end] of rule.windows) {
     if (minutes >= toMinutes(start) && minutes < toMinutes(end)) return rule.factor;
@@ -58,6 +84,54 @@ export function resolvePrice(
   return match ? table[match] : undefined;
 }
 
+const EMPTY_BREAKDOWN: CostBreakdown = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  total: 0,
+  actual: 0,
+  multiplier: 1,
+  priced: false,
+};
+
+export function estimateCostBreakdown(
+  table: PriceTable,
+  provider: string,
+  model: string,
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number },
+  at: number,
+  calendar?: CalendarRules,
+): CostBreakdown {
+  const entry = resolvePrice(table, provider, model);
+  if (!entry) return EMPTY_BREAKDOWN;
+
+  const inputTokens = Math.max(0, tokens.input);
+  const outputTokens = Math.max(0, tokens.output);
+  const cacheReadTokens = Math.max(0, tokens.cacheRead);
+  const cacheWriteTokens = Math.max(0, tokens.cacheWrite);
+  const cacheReadRate = entry.cacheRead ?? entry.input;
+  const cacheWriteRate = entry.cacheWrite ?? entry.input;
+
+  const input = (inputTokens / 1_000_000) * entry.input;
+  const output = (outputTokens / 1_000_000) * entry.output;
+  const cacheRead = (cacheReadTokens / 1_000_000) * cacheReadRate;
+  const cacheWrite = (cacheWriteTokens / 1_000_000) * cacheWriteRate;
+  const total = input + output + cacheRead + cacheWrite;
+  const multiplier = multiplierFor(entry, at, calendar);
+
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    total,
+    actual: total * multiplier,
+    multiplier,
+    priced: true,
+  };
+}
+
 export function estimateCost(
   table: PriceTable,
   provider: string,
@@ -67,16 +141,14 @@ export function estimateCost(
   cacheHits: number,
   at: number,
 ): number | null {
-  const entry = resolvePrice(table, provider, model);
-  if (!entry) return null;
-  const cached = Math.max(0, cacheHits);
-  const uncachedIn = Math.max(0, tokensIn - cached);
-  const cacheRate = entry.cacheRead ?? entry.input;
-  const base =
-    (uncachedIn / 1_000_000) * entry.input +
-    (cached / 1_000_000) * cacheRate +
-    (Math.max(0, tokensOut) / 1_000_000) * entry.output;
-  return base * multiplierFor(entry, at);
+  const breakdown = estimateCostBreakdown(
+    table,
+    provider,
+    model,
+    { input: Math.max(0, tokensIn - cacheHits), output: tokensOut, cacheRead: cacheHits, cacheWrite: 0 },
+    at,
+  );
+  return breakdown.priced ? breakdown.actual : null;
 }
 
 export function normalizePriceTable(raw: unknown): PriceTable {
@@ -89,11 +161,14 @@ export function normalizePriceTable(raw: unknown): PriceTable {
     const output = Number(entry.output);
     if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
     const cacheRead = Number(entry.cacheRead);
+    const cacheWrite = Number(entry.cacheWrite);
+    const peak = normalizePeak(entry.peak);
     out[key] = {
       input,
       output,
       ...(Number.isFinite(cacheRead) ? { cacheRead } : {}),
-      ...(normalizePeak(entry.peak) ? { peak: normalizePeak(entry.peak) } : {}),
+      ...(Number.isFinite(cacheWrite) ? { cacheWrite } : {}),
+      ...(peak ? { peak } : {}),
     };
   }
   return out;

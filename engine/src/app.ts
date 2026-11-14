@@ -15,6 +15,8 @@ import { builtinTools } from "./tools/builtin-tools.js";
 import { AsyncReActLoop } from "./loop.js";
 import { WorkerSessionImpl } from "./worker/index.js";
 import { loadPriceTable, type LoadedPrices } from "./usage/pricing.js";
+import { loadCatalog, searchModels, findModel, type Catalog, type ModelType } from "./catalog/index.js";
+import { isMakeupWorkday, isOffDay, loadHolidays, type HolidayCalendar } from "./usage/holidays.js";
 import { summarizeUsage, type UsageRange, type UsageSummary } from "./usage/aggregate.js";
 import { UsageRecorder } from "./usage/sink.js";
 import type { ProviderConfig, Trigger, UsageRecord, WorkerSession } from "./types.js";
@@ -29,6 +31,7 @@ export interface WatchdogQueryResult {
   healthy: boolean;
   alerts: string[];
   answer: string;
+  source: "model" | "heuristic";
   checkedAt: number;
 }
 
@@ -57,6 +60,10 @@ export class AgentEngine {
   private startedAt = Date.now();
   private recorder?: UsageRecorder;
   private prices?: LoadedPrices;
+  private catalog: Catalog = { generatedAt: "", providers: {} };
+  private catalogSource: "file" | "empty" = "empty";
+  private catalogError?: string;
+  private holidays: HolidayCalendar = { source: "", years: {} };
 
   readonly ready = false;
 
@@ -69,7 +76,24 @@ export class AgentEngine {
       ? new URL(`file://${process.env.AGENTFLOWS_PRICES}`)
       : new URL("../pricing/models-dev.json", import.meta.url);
     this.prices = await loadPriceTable(pricePath.pathname);
-    this.recorder = new UsageRecorder(this.store, this.prices.table);
+
+    const holidayPath = process.env.AGENTFLOWS_HOLIDAYS
+      ? new URL(`file://${process.env.AGENTFLOWS_HOLIDAYS}`)
+      : new URL("../holidays/cn.json", import.meta.url);
+    this.holidays = await loadHolidays(holidayPath.pathname);
+
+    this.recorder = new UsageRecorder(this.store, this.prices.table, {
+      isOffDay: (at) => isOffDay(this.holidays, at),
+      isMakeupWorkday: (at) => isMakeupWorkday(this.holidays, at),
+    });
+
+    const catalogPath = process.env.AGENTFLOWS_CATALOG
+      ? new URL(`file://${process.env.AGENTFLOWS_CATALOG}`)
+      : new URL("../catalog/models-dev.json", import.meta.url);
+    const loadedCatalog = await loadCatalog(catalogPath.pathname);
+    this.catalog = loadedCatalog.catalog;
+    this.catalogSource = loadedCatalog.source;
+    this.catalogError = loadedCatalog.error;
 
     this.providers.set(DEFAULT_PROVIDER.id, DEFAULT_PROVIDER);
     const openai = createProvider(DEFAULT_PROVIDER);
@@ -127,6 +151,10 @@ export class AgentEngine {
 
   registerProvider(config: ProviderConfig): { registered: boolean; models: string[] } {
     if (!config.id || !config.baseUrl) throw new Error("id and baseUrl are required");
+    if (config.models.length === 0) {
+      const known = this.catalog.providers[config.id];
+      if (known) config = { ...config, models: Object.keys(known.models) };
+    }
     this.providers.set(config.id, config);
     const provider = createProvider(config);
     this.modelRouter.register({ provider, config });
@@ -192,14 +220,66 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
   async askWatchdog(question: string): Promise<WatchdogQueryResult> {
     const state = this.watchdogState();
     const recent = this.watchdogEvents.slice(-5).map((event) => JSON.stringify(event));
-    const answer = [
+    const heuristic = [
       `Watchdog has been running for ${Math.round((Date.now() - this.startedAt) / 1000)}s.`,
       `Heartbeat at ${new Date(state.lastHeartbeat).toISOString()}, healthy=${state.healthy}.`,
       state.alerts.length ? `Active alerts: ${state.alerts.join("; ")}` : "No active alerts.",
       recent.length ? `Recent events: ${recent.join(" | ")}` : "No recent events.",
       `Question acknowledged: ${question}`,
     ].join(" ");
-    return { question, healthy: state.healthy, alerts: state.alerts, answer, checkedAt: Date.now() };
+
+    const modelId = this.router?.getSession().modelId || DEFAULT_PROVIDER.models[0];
+    if (!modelId) {
+      return { question, healthy: state.healthy, alerts: state.alerts, answer: heuristic, source: "heuristic", checkedAt: Date.now() };
+    }
+
+    try {
+      const provider = this.modelRouter.resolve(modelId);
+      const workers = [...this.workers.values()].map((worker) => ({
+        id: worker.id,
+        status: worker.status,
+        toolCalls: worker.getToolCalls().length,
+      }));
+      const response = await provider.invoke(modelId, [
+        {
+          role: "system",
+          content:
+            "You are the watchdog control loop of a local multi-agent runtime. " +
+            "Judge whether running workers still make real progress and answer the operator. " +
+            "Be concrete and short. Never invent worker ids or numbers that are not in the context.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({ question, healthy: state.healthy, alerts: state.alerts, workers, recent }, null, 2),
+        },
+      ]);
+
+      this.recorder?.record({
+        sessionId: "watchdog",
+        providerId: provider.id,
+        model: modelId,
+        tokensIn: response.tokensIn,
+        tokensOut: response.tokensOut,
+        cacheHits: response.cacheReadTokens ?? 0,
+        at: Date.now(),
+      });
+
+      const answer = response.text.trim();
+      if (!answer) {
+        return { question, healthy: state.healthy, alerts: state.alerts, answer: heuristic, source: "heuristic", checkedAt: Date.now() };
+      }
+      return { question, healthy: state.healthy, alerts: state.alerts, answer, source: "model", checkedAt: Date.now() };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        question,
+        healthy: state.healthy,
+        alerts: state.alerts,
+        answer: `${heuristic} (model judgement unavailable: ${reason})`,
+        source: "heuristic",
+        checkedAt: Date.now(),
+      };
+    }
   }
 
   watchdogState(): WatchdogState {
@@ -208,6 +288,14 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
 
   listUsage(): UsageRecord[] {
     return this.store?.listUsage() ?? [];
+  }
+
+  listSessions() {
+    return this.store?.listSessions() ?? [];
+  }
+
+  getSession(id: string) {
+    return this.store?.getSession(id);
   }
 
   usageSummary(range: UsageRange = "7d"): UsageSummary {
@@ -224,6 +312,36 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
           )
         : record.cost,
     );
+  }
+
+  searchCatalog(query: {
+    type?: ModelType;
+    provider?: string;
+    query?: string;
+    reasoning?: boolean;
+    minContext?: number;
+    limit?: number;
+  }) {
+    return searchModels(this.catalog, query);
+  }
+
+  modelCapabilities(provider: string, modelId: string) {
+    const model = findModel(this.catalog, provider, modelId);
+    if (!model) return { known: false as const, provider, model: modelId };
+    return { known: true as const, provider, model: modelId, capabilities: model };
+  }
+
+  catalogStatus() {
+    return {
+      source: this.catalogSource,
+      generatedAt: this.catalog.generatedAt,
+      providers: Object.keys(this.catalog.providers).length,
+      models: Object.values(this.catalog.providers).reduce(
+        (total, entry) => total + Object.keys(entry.models).length,
+        0,
+      ),
+      error: this.catalogError,
+    };
   }
 
   priceStatus(): { source: string; models: number; loadedAt: number; error?: string } {
@@ -276,6 +394,20 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
     event: { type: string; payload: unknown },
   ): void {
     if (event.type === "done") {
+      const worker = this.workers.get(workerId);
+      const session = this.bus.getWorker(workerId);
+      if (worker && session) {
+        this.store?.upsertSession({
+          id: workerId,
+          role: "worker",
+          modelId: session.modelId,
+          context: [{ result: event.payload }],
+          toolCalls: worker.getToolCalls(),
+          subscriptions: session.subscribedThreads,
+          createdAt: session.createdAt,
+          updatedAt: Date.now(),
+        });
+      }
       this.router?.onWorkerComplete(workerId, event.payload);
       this.store?.append({
         id: randomUUID(),

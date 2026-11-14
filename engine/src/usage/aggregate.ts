@@ -1,55 +1,59 @@
 import type { UsageRecord } from "../types.js";
 
 export type UsageRange = "today" | "7d" | "30d" | "all";
+export type UsageGranularity = "hour" | "day" | "week";
 
 export interface UsageBucket {
   tokens: number;
   tokensIn: number;
   tokensOut: number;
   cacheHits: number;
+  cacheWriteTokens: number;
   cost: number;
+  actualCost: number;
   requests: number;
+  failures: number;
 }
 
-export interface UsageDay extends UsageBucket {
-  date: string;
+export interface UsagePoint extends UsageBucket {
+  key: string;
+  label: string;
 }
 
 export interface UsageSessionBucket extends UsageBucket {
   sessionId: string;
+  workerId?: string;
+  role: string;
   models: string[];
   lastActivity: number;
+  avgDurationMs: number;
+  toolCalls: number;
+}
+
+export interface UsageModelBucket extends UsageBucket {
+  model: string;
+  provider: string;
+  priced: boolean;
 }
 
 export interface UsageSummary {
   range: UsageRange;
+  granularity: UsageGranularity;
   from: number;
   to: number;
   totals: UsageBucket & { priced: boolean };
-  composition: { input: number; output: number; cache: number };
-  byDay: UsageDay[];
+  composition: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  costBreakdown: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  byPoint: UsagePoint[];
   bySession: UsageSessionBucket[];
-  byModel: ({ model: string; provider: string } & UsageBucket)[];
-  heatmap: UsageDay[];
+  byModel: UsageModelBucket[];
+  byRole: UsagePoint[];
+  byError: { category: string; requests: number }[];
+  heatmap: { date: string; requests: number; tokens: number; cost: number }[];
+  statsUpdatedAt: number;
 }
 
 const DAY_MS = 86_400_000;
-
-export function rangeWindow(range: UsageRange, now: number): number {
-  switch (range) {
-    case "today": {
-      const date = new Date(now);
-      date.setHours(0, 0, 0, 0);
-      return date.getTime();
-    }
-    case "7d":
-      return startOfDay(now - 6 * DAY_MS);
-    case "30d":
-      return startOfDay(now - 29 * DAY_MS);
-    default:
-      return 0;
-  }
-}
 
 export function startOfDay(at: number): number {
   const date = new Date(at);
@@ -64,103 +68,190 @@ export function dayKey(at: number): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+export function rangeWindow(range: UsageRange, now: number): number {
+  switch (range) {
+    case "today":
+      return startOfDay(now);
+    case "7d":
+      return startOfDay(now - 6 * DAY_MS);
+    case "30d":
+      return startOfDay(now - 29 * DAY_MS);
+    default:
+      return 0;
+  }
+}
+
+function pointKey(at: number, granularity: UsageGranularity): string {
+  const date = new Date(at);
+  if (granularity === "hour") {
+    const hour = `${date.getHours()}`.padStart(2, "0");
+    return `${dayKey(at)} ${hour}:00`;
+  }
+  if (granularity === "week") {
+    const monday = new Date(startOfDay(at));
+    const weekday = (monday.getDay() + 6) % 7;
+    monday.setDate(monday.getDate() - weekday);
+    return dayKey(monday.getTime());
+  }
+  return dayKey(at);
+}
+
 const emptyBucket = (): UsageBucket => ({
   tokens: 0,
   tokensIn: 0,
   tokensOut: 0,
   cacheHits: 0,
+  cacheWriteTokens: 0,
   cost: 0,
+  actualCost: 0,
   requests: 0,
+  failures: 0,
 });
 
-const addInto = (bucket: UsageBucket, tokensIn: number, tokensOut: number, cacheHits: number, cost: number) => {
-  bucket.tokensIn += tokensIn;
-  bucket.tokensOut += tokensOut;
-  bucket.cacheHits += cacheHits;
-  bucket.tokens += tokensIn + tokensOut;
-  bucket.cost += cost;
+const addInto = (bucket: UsageBucket, record: UsageRecord) => {
+  bucket.tokensIn += record.tokensIn;
+  bucket.tokensOut += record.tokensOut;
+  bucket.cacheHits += record.cacheHits;
+  bucket.cacheWriteTokens += record.cacheWriteTokens;
+  bucket.tokens += record.tokensIn + record.tokensOut + record.cacheHits + record.cacheWriteTokens;
+  bucket.cost += record.cost.total;
+  bucket.actualCost += record.cost.actual;
   bucket.requests += 1;
+  if (record.errorCategory) bucket.failures += 1;
 };
 
-export function summarizeUsage(
-  records: UsageRecord[],
-  range: UsageRange,
-  now: number,
-  costOf: (record: UsageRecord) => number | null,
-): UsageSummary {
+export interface SummaryOptions {
+  range: UsageRange;
+  granularity?: UsageGranularity;
+  now?: number;
+  costOf?: (record: UsageRecord) => number | null;
+}
+
+export function summarizeUsage(records: UsageRecord[], options: SummaryOptions): UsageSummary {
+  const now = options.now ?? Date.now();
+  const range = options.range;
+  const granularity = options.granularity ?? "day";
   const from = rangeWindow(range, now);
+
   const totals = { ...emptyBucket(), priced: true };
-  const byDay = new Map<string, UsageDay>();
-  const bySession = new Map<string, UsageSessionBucket & { modelSet: Set<string> }>();
-  const byModel = new Map<string, { model: string; provider: string } & UsageBucket>();
+  const points = new Map<string, UsagePoint>();
+  const sessions = new Map<string, UsageSessionBucket & { modelSet: Set<string>; durationTotal: number }>();
+  const models = new Map<string, UsageModelBucket>();
+  const roles = new Map<string, UsagePoint>();
+  const errors = new Map<string, number>();
+  const days = new Map<string, { requests: number; tokens: number; cost: number }>();
+  const costBreakdown = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
   for (const record of records) {
     if (record.timestamp < from || record.timestamp > now) continue;
-    const estimated = costOf(record);
-    const cost = estimated ?? record.cost;
-    if (estimated === null) totals.priced = false;
 
-    addInto(totals, record.tokensIn, record.tokensOut, record.cacheHits, cost);
+    if (options.costOf) {
+      const estimated = options.costOf(record);
+      if (estimated === null) totals.priced = false;
+    } else if (!record.priced) {
+      totals.priced = false;
+    }
 
-    const key = dayKey(record.timestamp);
-    const day = byDay.get(key) ?? { date: key, ...emptyBucket() };
-    addInto(day, record.tokensIn, record.tokensOut, record.cacheHits, cost);
-    byDay.set(key, day);
+    addInto(totals, record);
+    costBreakdown.input += record.cost.input;
+    costBreakdown.output += record.cost.output;
+    costBreakdown.cacheRead += record.cost.cacheRead;
+    costBreakdown.cacheWrite += record.cost.cacheWrite;
+
+    const pk = pointKey(record.timestamp, granularity);
+    const point = points.get(pk) ?? { key: pk, label: pk, ...emptyBucket() };
+    addInto(point, record);
+    points.set(pk, point);
 
     const sessionKey = record.sessionId || "unassigned";
-    const session = bySession.get(sessionKey) ?? {
+    const session = sessions.get(sessionKey) ?? {
       sessionId: sessionKey,
+      workerId: record.workerId,
+      role: record.role,
       models: [],
       modelSet: new Set<string>(),
       lastActivity: 0,
+      durationTotal: 0,
+      avgDurationMs: 0,
+      toolCalls: 0,
       ...emptyBucket(),
     };
-    addInto(session, record.tokensIn, record.tokensOut, record.cacheHits, cost);
+    addInto(session, record);
     session.modelSet.add(record.model);
     session.lastActivity = Math.max(session.lastActivity, record.timestamp);
-    bySession.set(sessionKey, session);
+    session.durationTotal += record.durationMs;
+    session.toolCalls += record.toolCalls;
+    sessions.set(sessionKey, session);
 
     const modelKey = `${record.provider}/${record.model}`;
-    const model = byModel.get(modelKey) ?? { model: record.model, provider: record.provider, ...emptyBucket() };
-    addInto(model, record.tokensIn, record.tokensOut, record.cacheHits, cost);
-    byModel.set(modelKey, model);
+    const model = models.get(modelKey) ?? { model: record.model, provider: record.provider, priced: record.priced, ...emptyBucket() };
+    addInto(model, record);
+    if (!record.priced) model.priced = false;
+    models.set(modelKey, model);
+
+    const rolePoint = roles.get(record.role) ?? { key: record.role, label: record.role, ...emptyBucket() };
+    addInto(rolePoint, record);
+    roles.set(record.role, rolePoint);
+
+    if (record.errorCategory) {
+      errors.set(record.errorCategory, (errors.get(record.errorCategory) ?? 0) + 1);
+    }
+
+    const dk = dayKey(record.timestamp);
+    const day = days.get(dk) ?? { requests: 0, tokens: 0, cost: 0 };
+    day.requests += 1;
+    day.tokens += record.tokensIn + record.tokensOut + record.cacheHits + record.cacheWriteTokens;
+    day.cost += record.cost.actual;
+    days.set(dk, day);
   }
 
+  const heatmap: { date: string; requests: number; tokens: number; cost: number }[] = [];
   const heatmapStart = startOfDay(now) - 83 * DAY_MS;
-  const heatmap: UsageDay[] = [];
   for (let offset = 0; offset < 84; offset += 1) {
     const stamp = heatmapStart + offset * DAY_MS;
     const key = dayKey(stamp);
-    heatmap.push({ date: key, ...(byDay.get(key) ?? emptyBucket()) });
+    const day = days.get(key) ?? { requests: 0, tokens: 0, cost: 0 };
+    heatmap.push({ date: key, ...day });
   }
-
-  const sortedDays = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     range,
+    granularity,
     from,
     to: now,
     totals,
     composition: {
       input: totals.tokensIn,
       output: totals.tokensOut,
-      cache: totals.cacheHits,
+      cacheRead: totals.cacheHits,
+      cacheWrite: totals.cacheWriteTokens,
     },
-    byDay: sortedDays,
-    bySession: [...bySession.values()]
+    costBreakdown,
+    byPoint: [...points.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    bySession: [...sessions.values()]
       .map((session) => ({
         sessionId: session.sessionId,
+        workerId: session.workerId,
+        role: session.role,
         models: [...session.modelSet],
         lastActivity: session.lastActivity,
+        avgDurationMs: session.requests > 0 ? Math.round(session.durationTotal / session.requests) : 0,
+        toolCalls: session.toolCalls,
         tokens: session.tokens,
         tokensIn: session.tokensIn,
         tokensOut: session.tokensOut,
         cacheHits: session.cacheHits,
+        cacheWriteTokens: session.cacheWriteTokens,
         cost: session.cost,
+        actualCost: session.actualCost,
         requests: session.requests,
+        failures: session.failures,
       }))
       .sort((a, b) => b.lastActivity - a.lastActivity),
-    byModel: [...byModel.values()].sort((a, b) => b.tokens - a.tokens),
+    byModel: [...models.values()].sort((a, b) => b.tokens - a.tokens),
+    byRole: [...roles.values()].sort((a, b) => b.tokens - a.tokens),
+    byError: [...errors.entries()].map(([category, requests]) => ({ category, requests })).sort((a, b) => b.requests - a.requests),
     heatmap,
+    statsUpdatedAt: now,
   };
 }

@@ -66,11 +66,35 @@ export async function startEngine(dataDir: string, port = 0, engine?: AgentEngin
         const range = params.range;
         const allowed = ["today", "7d", "30d", "all"];
         const selected = typeof range === "string" && allowed.includes(range) ? range : "7d";
+        const granularity = params.granularity === "hour" || params.granularity === "week" ? params.granularity : "day";
         return {
           jsonrpc: "2.0",
           id,
-          result: target.usageSummary(selected as "today" | "7d" | "30d" | "all"),
+          result: target.usageSummary(selected as "today" | "7d" | "30d" | "all", granularity),
         };
+      }
+      case "usage.tools": {
+        const range = params.range;
+        const allowed = ["today", "7d", "30d", "all"];
+        const selected = typeof range === "string" && allowed.includes(range) ? range : "7d";
+        return { jsonrpc: "2.0", id, result: target.toolUsage(selected as "today" | "7d" | "30d" | "all") };
+      }
+      case "usage.errors": {
+        const range = params.range;
+        const allowed = ["today", "7d", "30d", "all"];
+        const selected = typeof range === "string" && allowed.includes(range) ? range : "7d";
+        return { jsonrpc: "2.0", id, result: target.errorBreakdown(selected as "today" | "7d" | "30d" | "all") };
+      }
+      case "usage.export": {
+        const range = params.range;
+        const allowed = ["today", "7d", "30d", "all"];
+        const selected = typeof range === "string" && allowed.includes(range) ? range : "7d";
+        const format = params.format === "json" ? "json" : "csv";
+        return { jsonrpc: "2.0", id, result: target.exportUsage(selected as "today" | "7d" | "30d" | "all", format) };
+      }
+      case "usage.cleanup": {
+        const keepDays = typeof params.keepDays === "number" ? params.keepDays : 90;
+        return { jsonrpc: "2.0", id, result: target.cleanupUsage(keepDays) };
       }
       case "usage.prices":
         return { jsonrpc: "2.0", id, result: target.priceStatus() };

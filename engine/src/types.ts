@@ -132,14 +132,61 @@ export interface ModelAssignment {
   uiModel: string;
 }
 
+export type AgentRoleName = "router" | "worker" | "watchdog" | "subagent";
+
+export type ErrorCategory =
+  | "network"
+  | "rate_limit"
+  | "context_limit"
+  | "tool_failure"
+  | "aborted"
+  | "provider_error"
+  | "unknown";
+
+export interface CostBreakdownRecord {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  actual: number;
+}
+
 export interface UsageRecord {
+  id?: number;
+  requestId?: string;
   sessionId: string;
-  model: string;
+  workerId?: string;
+  taskId?: string;
+  role: AgentRoleName;
   provider: string;
+  model: string;
+  requestedModel?: string;
+  reasoningEffort?: string;
+  stream: boolean;
+  stopReason?: string;
+  endpoint?: string;
   tokensIn: number;
   tokensOut: number;
   cacheHits: number;
-  cost: number;
+  cacheWriteTokens: number;
+  cost: CostBreakdownRecord;
+  priceMultiplier: number;
+  priced: boolean;
+  durationMs: number;
+  toolCalls: number;
+  retries: number;
+  errorCategory?: ErrorCategory;
+  timestamp: number;
+}
+
+export interface ToolUsageRecord {
+  id?: number;
+  sessionId: string;
+  workerId?: string;
+  tool: string;
+  ok: boolean;
+  durationMs: number;
   timestamp: number;
 }
 

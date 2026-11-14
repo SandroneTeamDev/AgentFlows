@@ -20,11 +20,14 @@ interface RouterConfig {
   maxConcurrency: number;
   onUsage?: (input: {
     sessionId: string;
+    role: "router";
     providerId: string;
     model: string;
+    stopReason?: string;
     tokensIn: number;
     tokensOut: number;
     cacheHits: number;
+    durationMs?: number;
     at: number;
   }) => void;
   onWorkerSpawned?: (session: WorkerSession) => void;
@@ -128,11 +131,14 @@ export class RouterLayer {
 
     this.config.onUsage?.({
       sessionId: this.session.id,
+      role: "router",
       providerId: provider.id,
       model: this.config.modelId,
+      stopReason: response.stopReason,
       tokensIn: response.tokensIn,
       tokensOut: response.tokensOut,
       cacheHits: response.cacheReadTokens ?? 0,
+      durationMs: Date.now() - startedAt,
       at: startedAt,
     });
 

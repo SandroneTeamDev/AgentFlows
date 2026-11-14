@@ -17,7 +17,13 @@ import { WorkerSessionImpl } from "./worker/index.js";
 import { loadPriceTable, type LoadedPrices } from "./usage/pricing.js";
 import { loadCatalog, searchModels, findModel, type Catalog, type ModelType } from "./catalog/index.js";
 import { isMakeupWorkday, isOffDay, loadHolidays, type HolidayCalendar } from "./usage/holidays.js";
-import { summarizeUsage, type UsageRange, type UsageSummary } from "./usage/aggregate.js";
+import {
+  rangeWindow,
+  summarizeUsage,
+  type UsageGranularity,
+  type UsageRange,
+  type UsageSummary,
+} from "./usage/aggregate.js";
 import { UsageRecorder } from "./usage/sink.js";
 import type { ProviderConfig, Trigger, UsageRecord, WorkerSession } from "./types.js";
 
@@ -234,6 +240,7 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
     }
 
     try {
+      const startedWatchdogAt = Date.now();
       const provider = this.modelRouter.resolve(modelId);
       const workers = [...this.workers.values()].map((worker) => ({
         id: worker.id,
@@ -256,11 +263,14 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
 
       this.recorder?.record({
         sessionId: "watchdog",
+        role: "watchdog",
         providerId: provider.id,
         model: modelId,
+        stopReason: response.stopReason,
         tokensIn: response.tokensIn,
         tokensOut: response.tokensOut,
         cacheHits: response.cacheReadTokens ?? 0,
+        durationMs: Date.now() - startedWatchdogAt,
         at: Date.now(),
       });
 
@@ -298,20 +308,58 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
     return this.store?.getSession(id);
   }
 
-  usageSummary(range: UsageRange = "7d"): UsageSummary {
-    const records = this.store?.listUsage(1000) ?? [];
-    return summarizeUsage(records, range, Date.now(), (record) =>
-      this.recorder
-        ? this.recorder.estimate(
-            record.provider,
-            record.model,
-            record.tokensIn,
-            record.tokensOut,
-            record.cacheHits,
-            record.timestamp,
-          )
-        : record.cost,
+  usageSummary(range: UsageRange = "7d", granularity: UsageGranularity = "day"): UsageSummary {
+    const now = Date.now();
+    const from = rangeWindow(range, now);
+    const records = this.store?.usageSince(from, now) ?? [];
+    return summarizeUsage(records, { range, granularity, now });
+  }
+
+  toolUsage(range: UsageRange = "7d") {
+    const now = Date.now();
+    return this.store?.toolUsageStats(rangeWindow(range, now), now) ?? [];
+  }
+
+  errorBreakdown(range: UsageRange = "7d") {
+    const now = Date.now();
+    return this.store?.errorBreakdown(rangeWindow(range, now), now) ?? [];
+  }
+
+  exportUsage(range: UsageRange, format: "csv" | "json"): { format: string; rows: number; content: string } {
+    const now = Date.now();
+    const records = this.store?.exportUsage(rangeWindow(range, now), now) ?? [];
+    if (format === "json") {
+      return { format, rows: records.length, content: JSON.stringify(records, null, 2) };
+    }
+    const header = [
+      "timestamp","session_id","worker_id","role","provider","model","requested_model","reasoning_effort",
+      "stream","stop_reason","tokens_in","tokens_out","cache_read","cache_write",
+      "cost_input","cost_output","cost_cache_read","cost_cache_write","cost_total","cost_actual",
+      "price_multiplier","priced","duration_ms","tool_calls","retries","error_category",
+    ].join(",");
+    const escape = (value: unknown) => {
+      const text = value === undefined || value === null ? "" : String(value);
+      return text.includes(",") || text.includes('"') || text.includes("\n")
+        ? `"${text.replace(/"/g, '""')}"`
+        : text;
+    };
+    const lines = records.map((record) =>
+      [
+        new Date(record.timestamp).toISOString(), record.sessionId, record.workerId, record.role,
+        record.provider, record.model, record.requestedModel, record.reasoningEffort,
+        record.stream, record.stopReason, record.tokensIn, record.tokensOut, record.cacheHits, record.cacheWriteTokens,
+        record.cost.input, record.cost.output, record.cost.cacheRead, record.cost.cacheWrite, record.cost.total, record.cost.actual,
+        record.priceMultiplier, record.priced, record.durationMs, record.toolCalls, record.retries, record.errorCategory,
+      ].map(escape).join(","),
     );
+    return { format, rows: records.length, content: [header, ...lines].join("\n") };
+  }
+
+  cleanupUsage(keepDays: number): { deleted: number; cutoff: number } {
+    const days = Math.min(3650, Math.max(1, Math.trunc(keepDays)));
+    const cutoff = Date.now() - days * 86_400_000;
+    const deleted = this.store?.cleanupUsage(cutoff) ?? 0;
+    return { deleted, cutoff };
   }
 
   searchCatalog(query: {
@@ -372,6 +420,15 @@ if (config.models.length > 0) this.modelRouter.setFallbackChain([...config.model
       maxSteps: 12,
       accessLevel: session.accessLevel,
       onUsage: (input) => this.recorder?.record(input),
+      onToolUsage: (input) =>
+        this.store?.recordToolUsage({
+          sessionId: input.sessionId,
+          workerId: input.workerId,
+          tool: input.tool,
+          ok: input.ok,
+          durationMs: input.durationMs,
+          timestamp: input.at,
+        }),
     });
     this.workers.set(session.id, worker);
     return worker;

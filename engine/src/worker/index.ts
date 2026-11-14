@@ -8,13 +8,23 @@ interface WorkerConfig {
   modelId: string;
   maxSteps: number;
   accessLevel: "full" | "plan" | "view" | "workspace_write";
+  onToolUsage?: (input: { sessionId: string; workerId: string; tool: string; ok: boolean; durationMs: number; at: number }) => void;
   onUsage?: (input: {
     sessionId: string;
+    workerId?: string;
+    taskId?: string;
+    role: "worker" | "subagent";
     providerId: string;
     model: string;
+    requestedModel?: string;
+    stopReason?: string;
     tokensIn: number;
     tokensOut: number;
     cacheHits: number;
+    cacheWriteTokens?: number;
+    durationMs?: number;
+    toolCalls?: number;
+    errorCategory?: "network" | "rate_limit" | "context_limit" | "tool_failure" | "aborted" | "provider_error" | "unknown";
     at: number;
   }) => void;
 }
@@ -75,6 +85,7 @@ export class WorkerSessionImpl {
     ];
 
     while (step < this.config.maxSteps && this.running) {
+      const requestStartedAt = Date.now();
       const response = await this.provider.invoke(
         this.config.modelId,
         messages,
@@ -84,11 +95,17 @@ export class WorkerSessionImpl {
 
       this.config.onUsage?.({
         sessionId: this.session.id,
+        workerId: this.session.id,
+        taskId: this.session.taskId,
+        role: this.session.agentRole === "subagent" ? "subagent" : "worker",
         providerId: this.provider.id,
         model: this.config.modelId,
+        stopReason: response.stopReason,
         tokensIn: response.tokensIn,
         tokensOut: response.tokensOut,
         cacheHits: response.cacheReadTokens ?? 0,
+        durationMs: Date.now() - requestStartedAt,
+        toolCalls: response.toolCalls?.length ?? 0,
         at: Date.now(),
       });
 
@@ -121,7 +138,16 @@ export class WorkerSessionImpl {
             timestamp: Date.now(),
           });
 
+          const toolStartedAt = Date.now();
           const result = await this.executeTool(tc, this.abortController.signal);
+          this.config.onToolUsage?.({
+            sessionId: this.session.id,
+            workerId: this.session.id,
+            tool: tc.name,
+            ok: result.ok,
+            durationMs: Date.now() - toolStartedAt,
+            at: Date.now(),
+          });
           toolCall.status = result.ok ? "done" : "error";
           toolCall.result = result.ok ? result.value : undefined;
           toolCall.error = result.ok ? undefined : String(result.value);

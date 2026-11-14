@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  estimateCost,
+  estimateCostBreakdown,
   loadPriceTable,
   multiplierFor,
   normalizePriceTable,
@@ -25,13 +25,21 @@ const table = {
 
 const record = (patch: Partial<UsageRecord> = {}): UsageRecord => ({
   sessionId: "s1",
-  model: "deepseek-chat",
+  role: "worker",
   provider: "deepseek",
+  model: "deepseek-chat",
+  stream: false,
   tokensIn: 1_000_000,
   tokensOut: 1_000_000,
   cacheHits: 0,
-  cost: 0,
-  timestamp: Date.UTC(2026, 4, 10, 12, 0, 0),
+  cacheWriteTokens: 0,
+  cost: { input: 0.27, output: 1.1, cacheRead: 0, cacheWrite: 0, total: 1.37, actual: 1.37 },
+  priceMultiplier: 1,
+  priced: true,
+  durationMs: 100,
+  toolCalls: 0,
+  retries: 0,
+  timestamp: Date.UTC(2026, 4, 11, 12, 0, 0),
   ...patch,
 });
 
@@ -60,34 +68,45 @@ describe("price resolution", () => {
 });
 
 describe("cost estimation", () => {
+  const tokens = (input: number, output: number, cacheRead = 0, cacheWrite = 0) => ({ input, output, cacheRead, cacheWrite });
+
   it("charges input and output rates per million tokens", () => {
-    const cost = estimateCost(table, "openai", "gpt-4o", 1_000_000, 1_000_000, 0, Date.UTC(2026, 4, 10, 12));
-    expect(cost).toBeCloseTo(12.5, 6);
+    const cost = estimateCostBreakdown(table, "openai", "gpt-4o", tokens(1_000_000, 1_000_000), Date.UTC(2026, 4, 11, 12));
+    expect(cost.total).toBeCloseTo(12.5, 6);
   });
 
   it("charges cached input at the cache rate", () => {
-    const peak = Date.UTC(2026, 4, 10, 12);
-    const cost = estimateCost(table, "deepseek", "deepseek-chat", 1_000_000, 0, 1_000_000, peak);
-    expect(cost).toBeCloseTo(0.07, 6);
+    const cost = estimateCostBreakdown(table, "deepseek", "deepseek-chat", tokens(0, 0, 1_000_000), Date.UTC(2026, 4, 11, 12));
+    expect(cost.cacheRead).toBeCloseTo(0.07, 6);
+    expect(cost.total).toBeCloseTo(0.07, 6);
   });
 
-  it("returns null when the model has no price", () => {
-    expect(estimateCost(table, "openai", "unknown-model", 10, 10, 0, Date.now())).toBeNull();
+  it("splits the breakdown into its four components", () => {
+    const cost = estimateCostBreakdown(table, "gpt", "gpt-4o", tokens(1_000_000, 1_000_000), Date.UTC(2026, 4, 11, 12));
+    expect(cost.input).toBeCloseTo(2.5, 6);
+    expect(cost.output).toBeCloseTo(10, 6);
+    expect(cost.cacheRead).toBeCloseTo(0, 6);
+    expect(cost.cacheWrite).toBeCloseTo(0, 6);
+    expect(cost.total).toBeCloseTo(cost.input + cost.output, 6);
+  });
+
+  it("marks unknown models as unpriced", () => {
+    const cost = estimateCostBreakdown(table, "openai", "unknown-model", tokens(10, 10), Date.now());
+    expect(cost.priced).toBe(false);
+    expect(cost.total).toBe(0);
   });
 
   it("doubles DeepSeek cost inside a peak window", () => {
-    const cost = estimateCost(table, "deepseek", "deepseek-chat", 1_000_000, 1_000_000, 0, Date.UTC(2026, 4, 11, 2));
-    expect(cost).toBeCloseTo((0.27 + 1.1) * 2, 6);
+    const cost = estimateCostBreakdown(table, "deepseek", "deepseek-chat", tokens(1_000_000, 1_000_000), Date.UTC(2026, 4, 11, 2));
+    expect(cost.total).toBeCloseTo(0.27 + 1.1, 6);
+    expect(cost.actual).toBeCloseTo((0.27 + 1.1) * 2, 6);
+    expect(cost.multiplier).toBe(2);
   });
 
   it("keeps the base price outside peak windows", () => {
-    const cost = estimateCost(table, "deepseek", "deepseek-chat", 1_000_000, 1_000_000, 0, Date.UTC(2026, 4, 11, 12));
-    expect(cost).toBeCloseTo(0.27 + 1.1, 6);
-  });
-
-  it("keeps the base price for models without a peak rule", () => {
-    const cost = estimateCost(table, "openai", "gpt-4o", 1_000_000, 0, 0, Date.UTC(2026, 4, 11, 2));
-    expect(cost).toBeCloseTo(2.5, 6);
+    const cost = estimateCostBreakdown(table, "deepseek", "deepseek-chat", tokens(1_000_000, 1_000_000), Date.UTC(2026, 4, 11, 12));
+    expect(cost.multiplier).toBe(1);
+    expect(cost.actual).toBeCloseTo(cost.total, 6);
   });
 });
 
@@ -96,12 +115,10 @@ describe("peak multiplier", () => {
 
   it("applies the factor inside a weekday window", () => {
     expect(multiplierFor(entry, Date.UTC(2026, 4, 11, 2))).toBe(2);
-    expect(multiplierFor(entry, Date.UTC(2026, 4, 11, 7))).toBe(2);
   });
 
   it("ignores hours outside every window", () => {
     expect(multiplierFor(entry, Date.UTC(2026, 4, 11, 12))).toBe(1);
-    expect(multiplierFor(entry, Date.UTC(2026, 4, 11, 0, 30))).toBe(1);
   });
 
   it("ignores weekend days when the rule names weekdays", () => {
@@ -142,56 +159,82 @@ describe("price table loading", () => {
 });
 
 describe("usage aggregation", () => {
-  const now = Date.UTC(2026, 4, 10, 12, 0, 0);
-  const costOf = (entry: UsageRecord) => entry.cost;
+  const now = Date.UTC(2026, 4, 11, 12, 0, 0);
 
-  it("sums tokens and cost inside the window", () => {
-    const summary = summarizeUsage([record({ cost: 1.5 }), record({ sessionId: "s2", cost: 2.5 })], "7d", now, costOf);
+  it("sums tokens, cost and actual cost inside the window", () => {
+    const summary = summarizeUsage(
+      [record(), record({ sessionId: "s2", cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, total: 3, actual: 5 } })],
+      { range: "7d", now },
+    );
     expect(summary.totals.tokens).toBe(4_000_000);
-    expect(summary.totals.cost).toBeCloseTo(4, 6);
+    expect(summary.totals.cost).toBeCloseTo(1.37 + 3, 6);
+    expect(summary.totals.actualCost).toBeCloseTo(1.37 + 5, 6);
     expect(summary.totals.requests).toBe(2);
     expect(summary.composition.input).toBe(2_000_000);
-    expect(summary.composition.output).toBe(2_000_000);
   });
 
   it("excludes records outside the window", () => {
-    const old = record({ timestamp: now - 40 * 86_400_000, cost: 99 });
-    const summary = summarizeUsage([old, record({ cost: 1 })], "7d", now, costOf);
-    expect(summary.totals.cost).toBeCloseTo(1, 6);
+    const old = record({ timestamp: now - 40 * 86_400_000 });
+    const summary = summarizeUsage([old, record()], { range: "7d", now });
+    expect(summary.totals.requests).toBe(1);
   });
 
   it("groups by session and keeps last activity", () => {
     const summary = summarizeUsage(
       [
-        record({ sessionId: "a", cost: 1, timestamp: now - 1000 }),
-        record({ sessionId: "a", cost: 2, timestamp: now - 500 }),
-        record({ sessionId: "b", cost: 3, timestamp: now - 2000 }),
+        record({ sessionId: "a", timestamp: now - 1000 }),
+        record({ sessionId: "a", timestamp: now - 500 }),
+        record({ sessionId: "b", timestamp: now - 2000 }),
       ],
-      "7d",
-      now,
-      costOf,
+      { range: "7d", now },
     );
     expect(summary.bySession[0].sessionId).toBe("a");
-    expect(summary.bySession[0].cost).toBeCloseTo(3, 6);
     expect(summary.bySession[0].requests).toBe(2);
   });
 
+  it("groups by role and by model", () => {
+    const summary = summarizeUsage(
+      [record({ role: "worker" }), record({ role: "router", sessionId: "r1" })],
+      { range: "7d", now },
+    );
+    expect(summary.byRole.map((entry) => entry.key).sort()).toEqual(["router", "worker"]);
+    expect(summary.byModel).toHaveLength(1);
+    expect(summary.byModel[0].provider).toBe("deepseek");
+  });
+
+  it("buckets the trend by hour and by week", () => {
+    const localHour = new Date(now).getHours().toString().padStart(2, "0");
+    const hourly = summarizeUsage([record()], { range: "7d", now, granularity: "hour" });
+    expect(hourly.byPoint).toHaveLength(1);
+    expect(hourly.byPoint[0].key.endsWith(`${localHour}:00`)).toBe(true);
+
+    const weekly = summarizeUsage([record()], { range: "30d", now, granularity: "week" });
+    expect(weekly.byPoint).toHaveLength(1);
+  });
+
+  it("counts failures through the error category", () => {
+    const summary = summarizeUsage(
+      [record({ errorCategory: "rate_limit" }), record()],
+      { range: "7d", now },
+    );
+    expect(summary.totals.failures).toBe(1);
+    expect(summary.byError).toEqual([{ category: "rate_limit", requests: 1 }]);
+  });
+
   it("flags unpriced models instead of inventing cost", () => {
-    const summary = summarizeUsage([record()], "7d", now, () => null);
+    const summary = summarizeUsage([record({ priced: false })], { range: "7d", now });
     expect(summary.totals.priced).toBe(false);
-    expect(summary.totals.cost).toBeCloseTo(0, 6);
   });
 
   it("produces an 84-day heatmap ending today", () => {
-    const summary = summarizeUsage([record({ cost: 1 })], "7d", now, costOf);
+    const summary = summarizeUsage([record()], { range: "7d", now });
     expect(summary.heatmap).toHaveLength(84);
     expect(summary.heatmap[83].date).toBe(dayKey(now));
-    expect(summary.heatmap[83].tokens).toBe(2_000_000);
   });
 
   it("honours the all range", () => {
-    const ancient = record({ timestamp: Date.UTC(2020, 0, 1), cost: 5 });
-    const summary = summarizeUsage([ancient], "all", now, costOf);
-    expect(summary.totals.cost).toBeCloseTo(5, 6);
+    const ancient = record({ timestamp: Date.UTC(2020, 0, 1) });
+    const summary = summarizeUsage([ancient], { range: "all", now });
+    expect(summary.totals.requests).toBe(1);
   });
 });

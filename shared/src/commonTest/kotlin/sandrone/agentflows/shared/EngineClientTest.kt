@@ -95,6 +95,39 @@ class EngineClientTest {
     }
 
     @Test
+    fun parsesUsageSummaryTotalsAndBreakdowns() {
+        val summary = parseUsageSummary(
+            Json.parseToJsonElement(
+                """{"range":"7d",
+                   "totals":{"tokens":900,"tokensIn":600,"tokensOut":300,"cacheHits":120,"cost":1.25,"requests":3,"priced":false},
+                   "composition":{"input":600,"output":300,"cache":120},
+                   "byDay":[{"date":"2026-11-13","tokens":900,"cost":1.25,"requests":3}],
+                   "bySession":[{"sessionId":"s1","models":["gpt","local"],"tokens":900,"tokensIn":600,"tokensOut":300,"cost":1.25,"requests":3,"lastActivity":77}],
+                   "byModel":[{"model":"gpt","provider":"openai","tokens":900,"cost":1.25,"requests":3}],
+                   "heatmap":[{"date":"2026-11-13","tokens":900,"cost":1.25,"requests":3}]}""",
+            ),
+        )
+        assertEquals("7d", summary.range)
+        assertEquals(900L, summary.totals.tokens)
+        assertEquals(1.25, summary.totals.cost)
+        assertFalse(summary.priced)
+        assertEquals("2026-11-13", summary.byDay.single().date)
+        assertEquals(listOf("gpt", "local"), summary.bySession.single().models)
+        assertEquals("openai", summary.byModel.single().provider)
+        assertEquals(3, summary.heatmap.single().requests)
+    }
+
+    @Test
+    fun usageSummarySurvivesMissingFields() {
+        val summary = parseUsageSummary(Json.parseToJsonElement("""{}"""))
+        assertEquals(0L, summary.totals.tokens)
+        assertEquals(0.0, summary.totals.cost)
+        assertTrue(summary.priced)
+        assertTrue(summary.bySession.isEmpty())
+        assertTrue(summary.heatmap.isEmpty())
+    }
+
+    @Test
     fun durationAndCountFormattingStayReadable() {
         assertEquals("0s", sandrone.agentflows.shared.ui.formatDuration(0))
         assertEquals("45s", sandrone.agentflows.shared.ui.formatDuration(45_000))

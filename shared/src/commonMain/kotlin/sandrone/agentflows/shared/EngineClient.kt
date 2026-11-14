@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -20,8 +21,61 @@ interface EngineClient {
     suspend fun askWatchdog(question: String): String
     suspend fun registerProvider(id: String, baseUrl: String, models: List<String>)
     suspend fun probeModels(): Boolean
+    suspend fun usageSummary(range: UsageRange): UsageSummary
     fun close()
 }
+
+enum class UsageRange(val wire: String, val label: String) {
+    TODAY("today", "Today"),
+    WEEK("7d", "7 days"),
+    MONTH("30d", "30 days"),
+    ALL("all", "All time"),
+}
+
+data class UsageBucket(
+    val tokens: Long = 0,
+    val tokensIn: Long = 0,
+    val tokensOut: Long = 0,
+    val cacheHits: Long = 0,
+    val cost: Double = 0.0,
+    val requests: Int = 0,
+)
+
+data class UsageDayBucket(
+    val date: String,
+    val tokens: Long,
+    val cost: Double,
+    val requests: Int,
+)
+
+data class UsageSessionBucket(
+    val sessionId: String,
+    val models: List<String>,
+    val tokens: Long,
+    val tokensIn: Long,
+    val tokensOut: Long,
+    val cost: Double,
+    val requests: Int,
+    val lastActivity: Long,
+)
+
+data class UsageModelBucket(
+    val model: String,
+    val provider: String,
+    val tokens: Long,
+    val cost: Double,
+    val requests: Int,
+)
+
+data class UsageSummary(
+    val range: String = "7d",
+    val totals: UsageBucket = UsageBucket(),
+    val priced: Boolean = true,
+    val byDay: List<UsageDayBucket> = emptyList(),
+    val bySession: List<UsageSessionBucket> = emptyList(),
+    val byModel: List<UsageModelBucket> = emptyList(),
+    val heatmap: List<UsageDayBucket> = emptyList(),
+)
 
 expect fun createEngineClient(): EngineClient
 
@@ -164,3 +218,62 @@ internal fun parseProbeResult(element: JsonElement): Boolean {
 
 private fun JsonObject.string(key: String): String =
     (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
+internal fun parseUsageSummary(element: JsonElement): UsageSummary {
+    val obj = element.jsonObject
+    val totalsNode = obj["totals"] as? JsonObject
+
+    fun bucket(node: JsonObject?): UsageBucket = UsageBucket(
+        tokens = node?.get("tokens")?.jsonPrimitive?.longOrNull ?: 0L,
+        tokensIn = node?.get("tokensIn")?.jsonPrimitive?.longOrNull ?: 0L,
+        tokensOut = node?.get("tokensOut")?.jsonPrimitive?.longOrNull ?: 0L,
+        cacheHits = node?.get("cacheHits")?.jsonPrimitive?.longOrNull ?: 0L,
+        cost = node?.get("cost")?.jsonPrimitive?.doubleOrNull ?: 0.0,
+        requests = node?.get("requests")?.jsonPrimitive?.intOrNull ?: 0,
+    )
+
+    fun days(key: String): List<UsageDayBucket> = (obj[key] as? JsonArray).orEmpty().map { entry ->
+        val item = entry.jsonObject
+        UsageDayBucket(
+            date = item["date"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            tokens = item["tokens"]?.jsonPrimitive?.longOrNull ?: 0L,
+            cost = item["cost"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            requests = item["requests"]?.jsonPrimitive?.intOrNull ?: 0,
+        )
+    }
+
+    val bySession = (obj["bySession"] as? JsonArray).orEmpty().map { entry ->
+        val item = entry.jsonObject
+        val modelList = (item["models"] as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() }
+        UsageSessionBucket(
+            sessionId = item["sessionId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            models = modelList,
+            tokens = item["tokens"]?.jsonPrimitive?.longOrNull ?: 0L,
+            tokensIn = item["tokensIn"]?.jsonPrimitive?.longOrNull ?: 0L,
+            tokensOut = item["tokensOut"]?.jsonPrimitive?.longOrNull ?: 0L,
+            cost = item["cost"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            requests = item["requests"]?.jsonPrimitive?.intOrNull ?: 0,
+            lastActivity = item["lastActivity"]?.jsonPrimitive?.longOrNull ?: 0L,
+        )
+    }
+
+    val byModel = (obj["byModel"] as? JsonArray).orEmpty().map { entry ->
+        val item = entry.jsonObject
+        UsageModelBucket(
+            model = item["model"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            provider = item["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            tokens = item["tokens"]?.jsonPrimitive?.longOrNull ?: 0L,
+            cost = item["cost"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            requests = item["requests"]?.jsonPrimitive?.intOrNull ?: 0,
+        )
+    }
+
+    return UsageSummary(
+        range = obj["range"]?.jsonPrimitive?.contentOrNull ?: "7d",
+        totals = bucket(totalsNode),
+        priced = totalsNode?.get("priced")?.jsonPrimitive?.booleanOrNull ?: true,
+        byDay = days("byDay"),
+        bySession = bySession,
+        byModel = byModel,
+        heatmap = days("heatmap"),
+    )
+}

@@ -168,7 +168,7 @@ fun AgentFlowsApp(client: EngineClient = remember { createEngineClient() }) {
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                     AgentTab.Flows -> FlowsPanel(snapshot.flows, Modifier.fillMaxSize())
-                                    AgentTab.Usage -> UsagePanel(snapshot.usage, Modifier.fillMaxSize())
+                                    AgentTab.Usage -> UsagePanel(client, Modifier.fillMaxSize())
                                     AgentTab.Settings -> SettingsPanel(
                                         snapshot = snapshot,
                                         prefs = prefs,

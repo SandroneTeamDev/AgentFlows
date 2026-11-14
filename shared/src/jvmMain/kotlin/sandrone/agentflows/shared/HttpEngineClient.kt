@@ -52,6 +52,9 @@ internal class HttpEngineClient(private val connection: suspend () -> EngineConn
     override suspend fun probeModels(): Boolean =
         parseProbeResult(rpc("model.probe", JsonObject(emptyMap())))
 
+    override suspend fun usageSummary(range: UsageRange): UsageSummary =
+        parseUsageSummary(rpc("usage.summary", buildJsonObject { put("range", range.wire) }))
+
     override fun close() = Unit
 
     private suspend fun rpc(method: String, params: JsonObject): JsonElement = withContext(Dispatchers.IO) {

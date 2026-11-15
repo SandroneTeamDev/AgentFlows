@@ -85,13 +85,17 @@ import sandrone.agentflows.shared.design.ThinRule
 import sandrone.agentflows.shared.design.Tone
 import sandrone.agentflows.shared.design.isDesktop
 import sandrone.agentflows.shared.design.metrics
+import sandrone.agentflows.shared.i18n.errorLabel
+import sandrone.agentflows.shared.i18n.pick
+import sandrone.agentflows.shared.i18n.roleLabel
+import sandrone.agentflows.shared.i18n.statusLabel
 import sandrone.agentflows.shared.nowMillis
 
 private val WidthTokens = 60.dp
 private val WidthCost = 62.dp
-private val WidthCalls = 40.dp
-private val WidthFail = 38.dp
-private val WidthAvg = 48.dp
+private val WidthCalls = 44.dp
+private val WidthFail = 42.dp
+private val WidthAvg = 66.dp
 private val WidthProvider = 76.dp
 private val WidthRole = 58.dp
 private val WidthLast = 58.dp
@@ -121,11 +125,17 @@ fun UsagePanel(
         try {
             val payload = client.usageExport(range, format)
             clipboard.setText(AnnotatedString(payload))
-            exportNotice = "Copied " + payload.lines().size + " rows as " + format.uppercase() + "."
+            exportNotice = pick(
+                "已复制 " + payload.lines().size + " 行，格式 " + format.uppercase() + "。",
+                "Copied " + payload.lines().size + " rows as " + format.uppercase() + ".",
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            exportNotice = "Export failed: " + (error.message ?: "unknown error")
+            exportNotice = pick(
+                "导出失败：" + (error.message ?: "未知错误"),
+                "Export failed: " + (error.message ?: "unknown error"),
+            )
         }
     }
 
@@ -138,7 +148,7 @@ fun UsagePanel(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            failure = error.message ?: "usage service unreachable"
+            failure = error.message ?: pick("用量服务不可达", "usage service unreachable")
         }
         loading = false
         delay(10_000)
@@ -249,7 +259,7 @@ private fun DesktopUsage(
             ) {
                 UsageRange.entries.forEach { option ->
                     MetaChip(
-                        text = option.label,
+                        text = rangeText(option),
                         selected = option == range,
                         onClick = { onRange(option) },
                         mono = true,
@@ -258,7 +268,7 @@ private fun DesktopUsage(
                 VerticalRule(14.dp)
                 UsageGranularity.entries.forEach { option ->
                     MetaChip(
-                        text = option.label,
+                        text = granularityText(option),
                         selected = option == granularity,
                         onClick = { onGranularity(option) },
                         mono = true,
@@ -273,7 +283,7 @@ private fun DesktopUsage(
             }
             if (failureText != null) {
                 Spacer(Modifier.width(6.dp))
-                MonoText("offline", color = MaterialTheme.colorScheme.error)
+                MonoText(statusLabel("offline"), color = MaterialTheme.colorScheme.error)
             }
             VerticalRule(14.dp)
             GhostIconButton(AgentIcons.Copy, onClick = onExportCsv)
@@ -304,14 +314,17 @@ private fun DesktopUsage(
                 item { DesktopFailureBanner(failureText, onRetry) }
             }
             if (initialLoading) {
-                item { PanelCard { LoadingBlock("Collecting usage for this range") } }
+                item { PanelCard { LoadingBlock(pick("正在收集该范围的用量", "Collecting usage for this range")) } }
             } else if (!hasData && failureText == null) {
                 item {
                     PanelCard {
                         EmptyHint(
                             icon = AgentIcons.Chart,
-                            title = "No usage recorded",
-                            detail = "Token and cost accounting stays on this device. Entries appear as soon as the engine records a model call for the selected range.",
+                            title = pick("暂无用量记录", "No usage recorded"),
+                            detail = pick(
+                                "Token 与费用统计只保留在本机。只要引擎为所选范围记录了一次模型调用，条目就会立即出现。",
+                                "Token and cost accounting stays on this device. Entries appear as soon as the engine records a model call for the selected range.",
+                            ),
                             dense = true,
                         )
                     }
@@ -351,10 +364,10 @@ private fun MobileUsage(
     val hasData = summary.totals.requests > 0
     val initialLoading = loading && !hasData && failureText == null
     val subtitle = when {
-        failureText != null -> "Engine unreachable, last snapshot kept"
-        initialLoading -> "Collecting the first snapshot"
-        summary.statsUpdatedAt > 0 -> "Updated " + formatRelative(summary.statsUpdatedAt, now)
-        else -> "Waiting for the first snapshot"
+        failureText != null -> pick("引擎不可达，保留上次快照", "Engine unreachable, last snapshot kept")
+        initialLoading -> pick("正在收集首个快照", "Collecting the first snapshot")
+        summary.statsUpdatedAt > 0 -> pick("更新于 ", "Updated ") + formatRelative(summary.statsUpdatedAt, now)
+        else -> pick("等待首个快照", "Waiting for the first snapshot")
     }
     Column(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 10.dp)) {
@@ -363,7 +376,7 @@ private fun MobileUsage(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Usage ledger",
+                        pick("用量台账", "Usage ledger"),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -383,7 +396,7 @@ private fun MobileUsage(
             }
             Spacer(Modifier.height(12.dp))
             SegmentedControl(
-                options = UsageRange.entries.map { it.name to it.label },
+                options = UsageRange.entries.map { it.name to rangeText(it) },
                 selected = range.name,
                 onSelect = { key ->
                     UsageRange.entries.firstOrNull { it.name == key }?.let { onRange(it) }
@@ -391,7 +404,7 @@ private fun MobileUsage(
             )
             Spacer(Modifier.height(8.dp))
             SegmentedControl(
-                options = UsageGranularity.entries.map { it.name to it.label },
+                options = UsageGranularity.entries.map { it.name to granularityText(it) },
                 selected = granularity.name,
                 onSelect = { key ->
                     UsageGranularity.entries.firstOrNull { it.name == key }?.let { onGranularity(it) }
@@ -406,14 +419,17 @@ private fun MobileUsage(
                 item { MobileFailureBanner(failureText, onRetry) }
             }
             if (initialLoading) {
-                item { PanelCard { LoadingBlock("Collecting usage for this range") } }
+                item { PanelCard { LoadingBlock(pick("正在收集该范围的用量", "Collecting usage for this range")) } }
             } else if (!hasData && failureText == null) {
                 item {
                     PanelCard {
                         EmptyHint(
                             icon = AgentIcons.Chart,
-                            title = "No usage recorded",
-                            detail = "Token and cost accounting stays on this device. Entries appear as soon as the engine records a model call for the selected range.",
+                            title = pick("暂无用量记录", "No usage recorded"),
+                            detail = pick(
+                                "Token 与费用统计只保留在本机。只要引擎为所选范围记录了一次模型调用，条目就会立即出现。",
+                                "Token and cost accounting stays on this device. Entries appear as soon as the engine records a model call for the selected range.",
+                            ),
                             dense = false,
                         )
                     }
@@ -436,7 +452,7 @@ private fun MobileUsage(
                 item { MobileExportCard(exportNotice, onExportCsv, onExportJson) }
                 item { MobileSessionsHeader(total = summary.bySession.size, filtered = sessions.size, query = query, onQuery = onQuery) }
                 if (sessions.isEmpty()) {
-                    item { CaptionText("No session matches that filter.", Modifier.padding(horizontal = 4.dp), size = 13.sp) }
+                    item { CaptionText(pick("没有会话符合该筛选条件。", "No session matches that filter."), Modifier.padding(horizontal = 4.dp), size = 13.sp) }
                 } else {
                     items(sessions) { session -> MobileSessionCard(session, now) }
                 }
@@ -453,29 +469,32 @@ private fun DesktopKpiStrip(summary: UsageSummary) {
     PanelCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             StatBlock(
-                "Tokens",
+                pick("Token", "Tokens"),
                 formatCount(totals.tokens),
                 Modifier.weight(1f),
-                caption = formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                caption = pick(
+                    formatCount(totals.tokensIn) + " 输入 / " + formatCount(totals.tokensOut) + " 输出",
+                    formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                ),
             )
             VerticalRule(28.dp, inset = 10.dp)
             StatBlock(
-                "Cost",
+                pick("费用", "Cost"),
                 formatCost(totals.actualCost),
                 Modifier.weight(1f),
-                caption = if (summary.priced) "billed estimate" else "unpriced models",
+                caption = if (summary.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
                 accent = if (summary.priced) null else scheme.tertiary,
             )
             VerticalRule(28.dp, inset = 10.dp)
-            StatBlock("Calls", totals.requests.toString(), Modifier.weight(1f), caption = "model calls")
+            StatBlock(pick("调用", "Calls"), totals.requests.toString(), Modifier.weight(1f), caption = pick("模型调用", "model calls"))
             VerticalRule(28.dp, inset = 10.dp)
-            StatBlock("Sessions", summary.bySession.size.toString(), Modifier.weight(1f), caption = "with activity")
+            StatBlock(pick("会话", "Sessions"), summary.bySession.size.toString(), Modifier.weight(1f), caption = pick("有活动", "with activity"))
             VerticalRule(28.dp, inset = 10.dp)
             StatBlock(
-                "Failures",
+                pick("失败", "Failures"),
                 totals.failures.toString(),
                 Modifier.weight(1f),
-                caption = if (totals.failures == 0) "none recorded" else "see breakdown",
+                caption = if (totals.failures == 0) pick("无记录", "none recorded") else pick("见明细", "see breakdown"),
                 accent = if (totals.failures > 0) scheme.error else null,
             )
         }
@@ -511,14 +530,14 @@ private fun DesktopTrendCard(summary: UsageSummary, granularity: UsageGranularit
     val showLabels = points.size <= 24
     PanelCard {
         PanelHeader(
-            title = "Trend",
-            subtitle = countOf(points.size, granularity.label.lowercase() + " bucket", granularity.label.lowercase() + " buckets"),
+            title = pick("趋势", "Trend"),
+            subtitle = trendSubtitle(points.size, granularity),
             icon = AgentIcons.Chart,
-            trailing = { MonoText("tokens") },
+            trailing = { MonoText(pick("Token", "tokens")) },
         )
         Spacer(Modifier.height(10.dp))
         if (points.isEmpty()) {
-            CaptionText("Nothing recorded in this range.", size = 11.sp)
+            CaptionText(pick("该范围内没有记录。", "Nothing recorded in this range."), size = 11.sp)
         } else {
             BarStrip(
                 values = points.map { it.tokens.toFloat() },
@@ -530,9 +549,9 @@ private fun DesktopTrendCard(summary: UsageSummary, granularity: UsageGranularit
         Spacer(Modifier.height(8.dp))
         ThinRule(alpha = 0.3f)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonoText("peak " + formatCount(peak))
+            MonoText(pick("峰值 ", "peak ") + formatCount(peak))
             Spacer(Modifier.weight(1f))
-            MonoText("range " + summary.range + " / " + summary.granularity)
+            MonoText(pick("范围 " + rangeWireText(summary.range) + " / " + granularityWireText(summary.granularity), "range " + summary.range + " / " + summary.granularity))
         }
     }
 }
@@ -541,20 +560,20 @@ private fun DesktopTrendCard(summary: UsageSummary, granularity: UsageGranularit
 private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long) {
     val total = totalTokens.coerceAtLeast(1L)
     PanelCard {
-        PanelHeader("By model", subtitle = "share of recorded tokens", icon = AgentIcons.Bolt)
+        PanelHeader(pick("按模型", "By model"), subtitle = pick("占已记录 Token 的比例", "share of recorded tokens"), icon = AgentIcons.Bolt)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Model", Modifier.weight(1f))
-            SectionLabel("Share", Modifier.weight(0.9f))
-            HeaderCell("Provider", WidthProvider)
-            HeaderCell("Calls", WidthCalls)
-            HeaderCell("Tokens", WidthTokens)
-            HeaderCell("Cost", WidthCost)
+            SectionLabel(pick("模型", "Model"), Modifier.weight(1f))
+            SectionLabel(pick("占比", "Share"), Modifier.weight(0.9f))
+            HeaderCell(pick("服务商", "Provider"), WidthProvider)
+            HeaderCell(pick("调用", "Calls"), WidthCalls)
+            HeaderCell(pick("Token", "Tokens"), WidthTokens)
+            HeaderCell(pick("费用", "Cost"), WidthCost)
         }
         Spacer(Modifier.height(4.dp))
         ThinRule(alpha = 0.4f)
         if (models.isEmpty()) {
-            CaptionText("No model calls recorded.", Modifier.padding(vertical = 8.dp), size = 11.sp)
+            CaptionText(pick("暂无模型调用记录。", "No model calls recorded."), Modifier.padding(vertical = 8.dp), size = 11.sp)
         } else {
             models.forEachIndexed { index, model ->
                 if (index > 0) {
@@ -566,7 +585,7 @@ private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long)
                 ) {
                     Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            model.model.ifBlank { "unassigned" },
+                            model.model.ifBlank { pick("未分配", "unassigned") },
                             Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -574,13 +593,13 @@ private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long)
                         )
                         if (!model.priced) {
                             Spacer(Modifier.width(6.dp))
-                            MetaChip("unpriced", tone = Tone.WARNING, mono = true)
+                            MetaChip(pick("未定价", "unpriced"), tone = Tone.WARNING, mono = true)
                         }
                     }
                     Box(Modifier.weight(0.9f).padding(end = 10.dp)) {
                         Meter(model.tokens.toFloat() / total.toFloat(), height = 4.dp)
                     }
-                    MonoText(model.provider.ifBlank { "local" }, Modifier.width(WidthProvider), size = 10.5.sp)
+                    MonoText(model.provider.ifBlank { pick("本地", "local") }, Modifier.width(WidthProvider), size = 10.5.sp)
                     NumberCell(model.requests.toString(), width = WidthCalls)
                     NumberCell(formatCount(model.tokens), width = WidthTokens)
                     NumberCell(formatCost(model.actualCost), width = WidthCost)
@@ -594,18 +613,18 @@ private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long)
 private fun DesktopRoleTable(roles: List<UsagePoint>, totalTokens: Long) {
     val total = totalTokens.coerceAtLeast(1L)
     PanelCard {
-        PanelHeader("By role", subtitle = "router, worker, watchdog, subagent", icon = AgentIcons.Settings)
+        PanelHeader(pick("按角色", "By role"), subtitle = pick("路由、执行体、看门狗、子代理", "router, worker, watchdog, subagent"), icon = AgentIcons.Settings)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Role", Modifier.weight(1f))
-            SectionLabel("Share", Modifier.weight(0.9f))
-            HeaderCell("Tokens", WidthTokens)
-            HeaderCell("Cost", WidthCost)
+            SectionLabel(pick("角色", "Role"), Modifier.weight(1f))
+            SectionLabel(pick("占比", "Share"), Modifier.weight(0.9f))
+            HeaderCell(pick("Token", "Tokens"), WidthTokens)
+            HeaderCell(pick("费用", "Cost"), WidthCost)
         }
         Spacer(Modifier.height(4.dp))
         ThinRule(alpha = 0.4f)
         if (roles.isEmpty()) {
-            CaptionText("No role activity recorded.", Modifier.padding(vertical = 8.dp), size = 11.sp)
+            CaptionText(pick("暂无角色活动记录。", "No role activity recorded."), Modifier.padding(vertical = 8.dp), size = 11.sp)
         } else {
             roles.forEachIndexed { index, role ->
                 if (index > 0) {
@@ -616,7 +635,7 @@ private fun DesktopRoleTable(roles: List<UsagePoint>, totalTokens: Long) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MonoText(
-                        role.label.ifBlank { role.key }.ifBlank { "unknown" },
+                        roleLabel(role.label.ifBlank { role.key }).ifBlank { pick("未知", "unknown") },
                         Modifier.weight(1f),
                         size = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -640,8 +659,8 @@ private fun DesktopCompositionCard(tokens: UsageTokens) {
     val colors = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.outline)
     PanelCard {
         PanelHeader(
-            title = "Context composition",
-            subtitle = "prompt, completion, cache read, cache write",
+            title = pick("上下文构成", "Context composition"),
+            subtitle = pick("提示、补全、缓存读、缓存写", "prompt, completion, cache read, cache write"),
             icon = AgentIcons.Wave,
         )
         Spacer(Modifier.height(10.dp))
@@ -671,7 +690,7 @@ private fun DesktopCompositionCard(tokens: UsageTokens) {
         Spacer(Modifier.height(8.dp))
         ThinRule(alpha = 0.3f)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonoText("context tokens")
+            MonoText(pick("上下文 Token", "context tokens"))
             Spacer(Modifier.weight(1f))
             MonoText(formatCount(total), size = 10.sp, color = scheme.onSurface)
         }
@@ -682,23 +701,23 @@ private fun DesktopCompositionCard(tokens: UsageTokens) {
 private fun DesktopCostCard(breakdown: UsageCost, totals: UsageBucket, priced: Boolean) {
     val scheme = MaterialTheme.colorScheme
     PanelCard {
-        PanelHeader("Cost breakdown", subtitle = "standard vs billed", icon = AgentIcons.Bolt)
+        PanelHeader(pick("费用明细", "Cost breakdown"), subtitle = pick("标准价与实收", "standard vs billed"), icon = AgentIcons.Bolt)
         Spacer(Modifier.height(6.dp))
-        KVRow("Prompt", formatCost(breakdown.input))
-        KVRow("Completion", formatCost(breakdown.output))
-        KVRow("Cache read", formatCost(breakdown.cacheRead))
-        KVRow("Cache write", formatCost(breakdown.cacheWrite))
+        KVRow(pick("提示", "Prompt"), formatCost(breakdown.input))
+        KVRow(pick("补全", "Completion"), formatCost(breakdown.output))
+        KVRow(pick("缓存读", "Cache read"), formatCost(breakdown.cacheRead))
+        KVRow(pick("缓存写", "Cache write"), formatCost(breakdown.cacheWrite))
         Spacer(Modifier.height(2.dp))
         ThinRule(alpha = 0.35f)
         Spacer(Modifier.height(2.dp))
-        KVRow("Standard", formatCost(totals.cost))
-        KVRow("Billed", formatCost(totals.actualCost), valueColor = scheme.primary)
+        KVRow(pick("标准价", "Standard"), formatCost(totals.cost))
+        KVRow(pick("实收", "Billed"), formatCost(totals.actualCost), valueColor = scheme.primary)
         if (totals.cost > totals.actualCost) {
-            KVRow("Saved", formatCost(totals.cost - totals.actualCost), valueColor = scheme.secondary)
+            KVRow(pick("节省", "Saved"), formatCost(totals.cost - totals.actualCost), valueColor = scheme.secondary)
         }
         if (!priced) {
             Spacer(Modifier.height(6.dp))
-            MetaChip("unpriced models present", tone = Tone.WARNING, mono = true)
+            MetaChip(pick("含未定价模型", "unpriced models present"), tone = Tone.WARNING, mono = true)
         }
     }
 }
@@ -707,16 +726,16 @@ private fun DesktopCostCard(breakdown: UsageCost, totals: UsageBucket, priced: B
 private fun DesktopToolTable(tools: List<UsageToolBucket>) {
     PanelCard {
         PanelHeader(
-            title = "Tool usage",
-            subtitle = countOf(tools.sumOf { it.calls }, "call", "calls") + " / " + countOf(tools.sumOf { it.failures }, "failure", "failures"),
+            title = pick("工具用量", "Tool usage"),
+            subtitle = toolUsageSubtitle(tools),
             icon = AgentIcons.Terminal,
         )
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Tool", Modifier.weight(1f))
-            HeaderCell("Calls", WidthCalls)
-            HeaderCell("Fail", WidthFail)
-            HeaderCell("Avg", WidthAvg)
+            SectionLabel(pick("工具", "Tool"), Modifier.weight(1f))
+            HeaderCell(pick("调用", "Calls"), WidthCalls)
+            HeaderCell(pick("失败", "Fail"), WidthFail)
+            HeaderCell(pick("平均", "Avg"), WidthAvg)
         }
         Spacer(Modifier.height(4.dp))
         ThinRule(alpha = 0.4f)
@@ -729,7 +748,7 @@ private fun DesktopToolTable(tools: List<UsageToolBucket>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MonoText(
-                    tool.tool.ifBlank { "unknown" },
+                    tool.tool.ifBlank { pick("未知", "unknown") },
                     Modifier.weight(1f),
                     size = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -740,7 +759,7 @@ private fun DesktopToolTable(tools: List<UsageToolBucket>) {
                     width = WidthFail,
                     color = if (tool.failures > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                NumberCell(tool.avgDurationMs.toString() + "ms", width = WidthAvg)
+                NumberCell(pick(tool.avgDurationMs.toString() + " ms", tool.avgDurationMs.toString() + "ms"), width = WidthAvg)
             }
         }
     }
@@ -749,11 +768,11 @@ private fun DesktopToolTable(tools: List<UsageToolBucket>) {
 @Composable
 private fun DesktopErrorTable(errors: List<UsageErrorBucket>) {
     PanelCard {
-        PanelHeader("Failures", subtitle = "by category", icon = AgentIcons.AlertTriangle)
+        PanelHeader(pick("失败", "Failures"), subtitle = pick("按类别", "by category"), icon = AgentIcons.AlertTriangle)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Category", Modifier.weight(1f))
-            HeaderCell("Count", WidthCalls)
+            SectionLabel(pick("类别", "Category"), Modifier.weight(1f))
+            HeaderCell(pick("数量", "Count"), WidthCalls)
         }
         Spacer(Modifier.height(4.dp))
         ThinRule(alpha = 0.4f)
@@ -766,7 +785,7 @@ private fun DesktopErrorTable(errors: List<UsageErrorBucket>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MonoText(
-                    entry.category.ifBlank { "uncategorised" },
+                    errorLabel(entry.category).ifBlank { pick("未分类", "uncategorised") },
                     Modifier.weight(1f),
                     size = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -783,15 +802,15 @@ private fun DesktopActivityCard(heatmap: List<UsageDayBucket>) {
     val total = heatmap.sumOf { it.requests.toLong() }
     val peak = heatmap.maxOfOrNull { it.requests } ?: 0
     PanelCard {
-        PanelHeader("Activity", subtitle = "requests per day, last 12 weeks", icon = AgentIcons.Grid)
+        PanelHeader(pick("活动", "Activity"), subtitle = pick("每日请求数，最近 12 周", "requests per day, last 12 weeks"), icon = AgentIcons.Grid)
         Spacer(Modifier.height(10.dp))
         HeatGrid(dailyCounts = daily, weeks = 12)
         Spacer(Modifier.height(8.dp))
         ThinRule(alpha = 0.3f)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonoText(formatCount(total) + " requests")
+            MonoText(pick(formatCount(total) + " 次请求", formatCount(total) + " requests"))
             Spacer(Modifier.weight(1f))
-            MonoText("peak " + peak + " / day")
+            MonoText(pick("峰值 " + peak + " / 天", "peak " + peak + " / day"))
         }
     }
 }
@@ -806,7 +825,7 @@ private fun DesktopSessionsSection(
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Sessions")
+            SectionLabel(pick("会话", "Sessions"))
             Spacer(Modifier.width(8.dp))
             MonoText(sessions.size.toString() + " / " + total)
             Spacer(Modifier.weight(1f))
@@ -818,7 +837,7 @@ private fun DesktopSessionsSection(
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                 placeholder = {
                     Text(
-                        "Filter session, role or model",
+                        pick("筛选会话、角色或模型", "Filter session, role or model"),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
@@ -829,21 +848,21 @@ private fun DesktopSessionsSection(
         Spacer(Modifier.height(8.dp))
         PanelCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SectionLabel("Session", Modifier.weight(1.3f))
-                SectionLabel("Role", Modifier.width(WidthRole))
-                SectionLabel("Models", Modifier.weight(1.2f))
-                HeaderCell("Tokens", WidthTokens)
-                HeaderCell("Calls", WidthCalls)
-                HeaderCell("Tools", WidthTools)
-                HeaderCell("Avg", WidthAvg)
-                HeaderCell("Last", WidthLast)
-                HeaderCell("Cost", WidthCost)
-                HeaderCell("Fail", WidthFail)
+                SectionLabel(pick("会话", "Session"), Modifier.weight(1.3f))
+                SectionLabel(pick("角色", "Role"), Modifier.width(WidthRole))
+                SectionLabel(pick("模型", "Models"), Modifier.weight(1.2f))
+                HeaderCell(pick("Token", "Tokens"), WidthTokens)
+                HeaderCell(pick("调用", "Calls"), WidthCalls)
+                HeaderCell(pick("工具", "Tools"), WidthTools)
+                HeaderCell(pick("平均", "Avg"), WidthAvg)
+                HeaderCell(pick("最近", "Last"), WidthLast)
+                HeaderCell(pick("费用", "Cost"), WidthCost)
+                HeaderCell(pick("失败", "Fail"), WidthFail)
             }
             Spacer(Modifier.height(4.dp))
             ThinRule(alpha = 0.4f)
             if (sessions.isEmpty()) {
-                CaptionText("No session matches that filter.", Modifier.padding(vertical = 10.dp), size = 11.sp)
+                CaptionText(pick("没有会话符合该筛选条件。", "No session matches that filter."), Modifier.padding(vertical = 10.dp), size = 11.sp)
             } else {
                 sessions.forEachIndexed { index, session ->
                     if (index > 0) {
@@ -854,21 +873,21 @@ private fun DesktopSessionsSection(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         MonoText(
-                            session.sessionId.take(20).ifBlank { "unassigned" },
+                            session.sessionId.take(20).ifBlank { pick("未分配", "unassigned") },
                             Modifier.weight(1.3f),
                             size = 10.5.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        MonoText(session.role.ifBlank { "worker" }, Modifier.width(WidthRole), size = 10.5.sp)
+                        MonoText(roleLabel(session.role).ifBlank { pick("执行体", "worker") }, Modifier.width(WidthRole), size = 10.5.sp)
                         MonoText(
-                            session.models.joinToString(", ").ifBlank { "unknown model" },
+                            session.models.joinToString(", ").ifBlank { pick("未知模型", "unknown model") },
                             Modifier.weight(1.2f),
                             size = 10.5.sp,
                         )
                         NumberCell(formatCount(session.tokens), width = WidthTokens)
                         NumberCell(session.requests.toString(), width = WidthCalls)
                         NumberCell(session.toolCalls.toString(), width = WidthTools)
-                        NumberCell(session.avgDurationMs.toString() + "ms", width = WidthAvg)
+                        NumberCell(pick(session.avgDurationMs.toString() + " ms", session.avgDurationMs.toString() + "ms"), width = WidthAvg)
                         NumberCell(formatRelative(session.lastActivity, now), width = WidthLast)
                         NumberCell(formatCost(session.actualCost), width = WidthCost)
                         NumberCell(
@@ -900,11 +919,11 @@ private fun DesktopFailureBanner(message: String, onRetry: () -> Unit) {
         Icon(AgentIcons.AlertTriangle, null, Modifier.size(13.dp), tint = scheme.error)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            SectionLabel("Usage unavailable", color = scheme.error)
+            SectionLabel(pick("用量不可用", "Usage unavailable"), color = scheme.error)
             CaptionText(message, Modifier.padding(top = 1.dp), maxLines = 2, size = 11.sp)
         }
         Spacer(Modifier.width(8.dp))
-        MonoText("retry", size = 10.sp, color = scheme.error)
+        MonoText(pick("重试", "retry"), size = 10.sp, color = scheme.error)
         Spacer(Modifier.width(6.dp))
         GhostIconButton(AgentIcons.Refresh, onClick = onRetry, size = 22.dp, iconSize = 12.dp, tint = scheme.error)
     }
@@ -923,7 +942,7 @@ private fun MobileFailureBanner(message: String, onRetry: () -> Unit) {
                 Icon(AgentIcons.AlertTriangle, null, Modifier.size(18.dp), tint = scheme.onErrorContainer)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    "Usage unavailable",
+                    pick("用量不可用", "Usage unavailable"),
                     Modifier.weight(1f),
                     maxLines = 1,
                     color = scheme.onErrorContainer,
@@ -938,7 +957,7 @@ private fun MobileFailureBanner(message: String, onRetry: () -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onRetry) {
-                Text("Retry", color = scheme.onErrorContainer)
+                Text(pick("重试", "Retry"), color = scheme.onErrorContainer)
             }
         }
     }
@@ -953,39 +972,42 @@ private fun MobileMetricTiles(summary: UsageSummary) {
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
                 StatBlock(
-                    "Tokens",
+                    pick("Token", "Tokens"),
                     formatCount(totals.tokens),
-                    caption = formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                    caption = pick(
+                        formatCount(totals.tokensIn) + " 入 / " + formatCount(totals.tokensOut) + " 出",
+                        formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                    ),
                 )
             }
             PanelCard(Modifier.weight(1f)) {
                 StatBlock(
-                    "Cost",
+                    pick("费用", "Cost"),
                     formatCost(totals.actualCost),
-                    caption = if (summary.priced) "billed estimate" else "unpriced models",
+                    caption = if (summary.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
                     accent = if (summary.priced) null else scheme.tertiary,
                 )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
-                StatBlock("Calls", totals.requests.toString(), caption = "model calls")
+                StatBlock(pick("调用", "Calls"), totals.requests.toString(), caption = pick("模型调用", "model calls"))
             }
             PanelCard(Modifier.weight(1f)) {
-                StatBlock("Sessions", summary.bySession.size.toString(), caption = "with activity")
+                StatBlock(pick("会话", "Sessions"), summary.bySession.size.toString(), caption = pick("有活动", "with activity"))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
                 StatBlock(
-                    "Failures",
+                    pick("失败", "Failures"),
                     totals.failures.toString(),
-                    caption = if (totals.failures == 0) "none recorded" else "see breakdown",
+                    caption = if (totals.failures == 0) pick("无记录", "none recorded") else pick("见明细", "see breakdown"),
                     accent = if (totals.failures > 0) scheme.error else null,
                 )
             }
             PanelCard(Modifier.weight(1f)) {
-                StatBlock("Cache hits", formatCount(totals.cacheHits), caption = "prompt cache")
+                StatBlock(pick("缓存命中", "Cache hits"), formatCount(totals.cacheHits), caption = pick("提示缓存", "prompt cache"))
             }
         }
     }
@@ -998,13 +1020,13 @@ private fun MobileTrendCard(summary: UsageSummary, range: UsageRange, granularit
     val showLabels = points.size <= 12
     PanelCard {
         PanelHeader(
-            title = "Trend",
-            subtitle = countOf(points.size, granularity.label.lowercase() + " bucket", granularity.label.lowercase() + " buckets"),
+            title = pick("趋势", "Trend"),
+            subtitle = trendSubtitle(points.size, granularity),
             icon = AgentIcons.Chart,
         )
         Spacer(Modifier.height(12.dp))
         if (points.isEmpty()) {
-            CaptionText("Nothing recorded in this range.", size = 13.sp)
+            CaptionText(pick("该范围内没有记录。", "Nothing recorded in this range."), size = 13.sp)
         } else {
             BarStrip(
                 values = points.map { it.tokens.toFloat() },
@@ -1015,9 +1037,9 @@ private fun MobileTrendCard(summary: UsageSummary, range: UsageRange, granularit
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MonoText("peak " + formatCount(peak), size = 11.sp)
+            MonoText(pick("峰值 ", "peak ") + formatCount(peak), size = 11.sp)
             Spacer(Modifier.weight(1f))
-            MonoText(range.label + " / " + granularity.label.lowercase(), size = 11.sp)
+            MonoText(pick(rangeText(range) + " / " + granularityText(granularity), range.label + " / " + granularity.label.lowercase()), size = 11.sp)
         }
     }
 }
@@ -1030,8 +1052,8 @@ private fun MobileCompositionCard(tokens: UsageTokens) {
     val colors = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.outline)
     PanelCard {
         PanelHeader(
-            title = "Context composition",
-            subtitle = "prompt, completion, cache read, cache write",
+            title = pick("上下文构成", "Context composition"),
+            subtitle = pick("提示、补全、缓存读、缓存写", "prompt, completion, cache read, cache write"),
             icon = AgentIcons.Wave,
         )
         Spacer(Modifier.height(16.dp))
@@ -1062,7 +1084,7 @@ private fun MobileCompositionCard(tokens: UsageTokens) {
         Spacer(Modifier.height(4.dp))
         ThinRule(alpha = 0.35f)
         Spacer(Modifier.height(4.dp))
-        KVRow("Context tokens", formatCount(total))
+        KVRow(pick("上下文 Token", "Context tokens"), formatCount(total))
     }
 }
 
@@ -1070,23 +1092,23 @@ private fun MobileCompositionCard(tokens: UsageTokens) {
 private fun MobileCostCard(breakdown: UsageCost, totals: UsageBucket, priced: Boolean) {
     val scheme = MaterialTheme.colorScheme
     PanelCard {
-        PanelHeader("Cost breakdown", subtitle = "standard vs billed", icon = AgentIcons.Bolt)
+        PanelHeader(pick("费用明细", "Cost breakdown"), subtitle = pick("标准价与实收", "standard vs billed"), icon = AgentIcons.Bolt)
         Spacer(Modifier.height(10.dp))
-        KVRow("Prompt", formatCost(breakdown.input))
-        KVRow("Completion", formatCost(breakdown.output))
-        KVRow("Cache read", formatCost(breakdown.cacheRead))
-        KVRow("Cache write", formatCost(breakdown.cacheWrite))
+        KVRow(pick("提示", "Prompt"), formatCost(breakdown.input))
+        KVRow(pick("补全", "Completion"), formatCost(breakdown.output))
+        KVRow(pick("缓存读", "Cache read"), formatCost(breakdown.cacheRead))
+        KVRow(pick("缓存写", "Cache write"), formatCost(breakdown.cacheWrite))
         Spacer(Modifier.height(6.dp))
         ThinRule(alpha = 0.35f)
         Spacer(Modifier.height(6.dp))
-        KVRow("Standard", formatCost(totals.cost))
-        KVRow("Billed", formatCost(totals.actualCost), valueColor = scheme.primary)
+        KVRow(pick("标准价", "Standard"), formatCost(totals.cost))
+        KVRow(pick("实收", "Billed"), formatCost(totals.actualCost), valueColor = scheme.primary)
         if (totals.cost > totals.actualCost) {
-            KVRow("Saved", formatCost(totals.cost - totals.actualCost), valueColor = scheme.secondary)
+            KVRow(pick("节省", "Saved"), formatCost(totals.cost - totals.actualCost), valueColor = scheme.secondary)
         }
         if (!priced) {
             Spacer(Modifier.height(10.dp))
-            MetaChip("unpriced models present", tone = Tone.WARNING, mono = true)
+            MetaChip(pick("含未定价模型", "unpriced models present"), tone = Tone.WARNING, mono = true)
         }
     }
 }
@@ -1095,16 +1117,16 @@ private fun MobileCostCard(breakdown: UsageCost, totals: UsageBucket, priced: Bo
 private fun MobileRoleCard(roles: List<UsagePoint>, totalTokens: Long) {
     val total = totalTokens.coerceAtLeast(1L)
     PanelCard {
-        PanelHeader("By role", subtitle = "router, worker, watchdog, subagent", icon = AgentIcons.Settings)
+        PanelHeader(pick("按角色", "By role"), subtitle = pick("路由、执行体、看门狗、子代理", "router, worker, watchdog, subagent"), icon = AgentIcons.Settings)
         Spacer(Modifier.height(10.dp))
         if (roles.isEmpty()) {
-            CaptionText("No role activity recorded.", size = 13.sp)
+            CaptionText(pick("暂无角色活动记录。", "No role activity recorded."), size = 13.sp)
         } else {
             roles.forEach { role ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            role.label.ifBlank { role.key }.ifBlank { "unknown" },
+                            roleLabel(role.label.ifBlank { role.key }).ifBlank { pick("未知", "unknown") },
                             Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1116,7 +1138,7 @@ private fun MobileRoleCard(roles: List<UsagePoint>, totalTokens: Long) {
                     Meter(role.tokens.toFloat() / total.toFloat(), height = 6.dp)
                     Spacer(Modifier.height(4.dp))
                     MonoText(
-                        formatCount(role.tokens) + " tokens / " + percentOf(role.tokens, total) + "%",
+                        pick(formatCount(role.tokens) + " Token / " + percentOf(role.tokens, total) + "%", formatCount(role.tokens) + " tokens / " + percentOf(role.tokens, total) + "%"),
                         size = 11.sp,
                     )
                 }
@@ -1130,16 +1152,16 @@ private fun MobileModelCard(models: List<UsageModelBucket>, totalTokens: Long) {
     val total = totalTokens.coerceAtLeast(1L)
     val scheme = MaterialTheme.colorScheme
     PanelCard {
-        PanelHeader("By model", subtitle = "share of recorded tokens", icon = AgentIcons.Bolt)
+        PanelHeader(pick("按模型", "By model"), subtitle = pick("占已记录 Token 的比例", "share of recorded tokens"), icon = AgentIcons.Bolt)
         Spacer(Modifier.height(10.dp))
         if (models.isEmpty()) {
-            CaptionText("No model calls recorded.", size = 13.sp)
+            CaptionText(pick("暂无模型调用记录。", "No model calls recorded."), size = 13.sp)
         } else {
             models.forEach { model ->
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            model.model.ifBlank { "unassigned" },
+                            model.model.ifBlank { pick("未分配", "unassigned") },
                             Modifier.weight(1f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1148,7 +1170,7 @@ private fun MobileModelCard(models: List<UsageModelBucket>, totalTokens: Long) {
                         MonoText(formatCost(model.actualCost), size = 12.sp, color = scheme.onSurface)
                     }
                     CaptionText(
-                        countOf(model.requests, "call", "calls") + " / " + model.provider.ifBlank { "local" },
+                        pick(model.requests.toString() + " 次调用", countOf(model.requests, "call", "calls")) + " / " + model.provider.ifBlank { pick("本地", "local") },
                         Modifier.padding(top = 2.dp),
                         maxLines = 1,
                     )
@@ -1157,12 +1179,12 @@ private fun MobileModelCard(models: List<UsageModelBucket>, totalTokens: Long) {
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MonoText(
-                            formatCount(model.tokens) + " tokens / " + percentOf(model.tokens, total) + "%",
+                            pick(formatCount(model.tokens) + " Token / " + percentOf(model.tokens, total) + "%", formatCount(model.tokens) + " tokens / " + percentOf(model.tokens, total) + "%"),
                             size = 11.sp,
                         )
                         Spacer(Modifier.weight(1f))
                         if (!model.priced) {
-                            MetaChip("unpriced", tone = Tone.WARNING, mono = true)
+                            MetaChip(pick("未定价", "unpriced"), tone = Tone.WARNING, mono = true)
                         }
                     }
                 }
@@ -1176,8 +1198,8 @@ private fun MobileToolCard(tools: List<UsageToolBucket>) {
     val scheme = MaterialTheme.colorScheme
     PanelCard {
         PanelHeader(
-            title = "Tool usage",
-            subtitle = countOf(tools.sumOf { it.calls }, "call", "calls") + " / " + countOf(tools.sumOf { it.failures }, "failure", "failures"),
+            title = pick("工具用量", "Tool usage"),
+            subtitle = toolUsageSubtitle(tools),
             icon = AgentIcons.Terminal,
         )
         Spacer(Modifier.height(10.dp))
@@ -1187,13 +1209,13 @@ private fun MobileToolCard(tools: List<UsageToolBucket>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    MonoText(tool.tool.ifBlank { "unknown" }, size = 13.sp, color = scheme.onSurface)
-                    CaptionText(tool.avgDurationMs.toString() + "ms avg", Modifier.padding(top = 2.dp), maxLines = 1, size = 11.5.sp)
+                    MonoText(tool.tool.ifBlank { pick("未知", "unknown") }, size = 13.sp, color = scheme.onSurface)
+                    CaptionText(pick("平均 " + tool.avgDurationMs.toString() + " ms", tool.avgDurationMs.toString() + "ms avg"), Modifier.padding(top = 2.dp), maxLines = 1, size = 11.5.sp)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    MonoText(tool.calls.toString() + " calls", size = 12.sp, color = scheme.onSurface)
+                    MonoText(pick(tool.calls.toString() + " 次调用", tool.calls.toString() + " calls"), size = 12.sp, color = scheme.onSurface)
                     CaptionText(
-                        if (tool.failures > 0) tool.failures.toString() + " failed" else "no failures",
+                        if (tool.failures > 0) pick(tool.failures.toString() + " 次失败", tool.failures.toString() + " failed") else pick("无失败", "no failures"),
                         Modifier.padding(top = 2.dp),
                         maxLines = 1,
                         size = 11.5.sp,
@@ -1208,7 +1230,7 @@ private fun MobileToolCard(tools: List<UsageToolBucket>) {
 @Composable
 private fun MobileErrorCard(errors: List<UsageErrorBucket>) {
     PanelCard {
-        PanelHeader("Failures", subtitle = "by category", icon = AgentIcons.AlertTriangle)
+        PanelHeader(pick("失败", "Failures"), subtitle = pick("按类别", "by category"), icon = AgentIcons.AlertTriangle)
         Spacer(Modifier.height(10.dp))
         errors.forEach { entry ->
             Row(
@@ -1216,7 +1238,7 @@ private fun MobileErrorCard(errors: List<UsageErrorBucket>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    entry.category.ifBlank { "uncategorised" },
+                    errorLabel(entry.category).ifBlank { pick("未分类", "uncategorised") },
                     Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1234,16 +1256,16 @@ private fun MobileActivityCard(heatmap: List<UsageDayBucket>) {
     val total = heatmap.sumOf { it.requests.toLong() }
     val peak = heatmap.maxOfOrNull { it.requests } ?: 0
     PanelCard {
-        PanelHeader("Activity", subtitle = "requests per day, last 12 weeks", icon = AgentIcons.Grid)
+        PanelHeader(pick("活动", "Activity"), subtitle = pick("每日请求数，最近 12 周", "requests per day, last 12 weeks"), icon = AgentIcons.Grid)
         Spacer(Modifier.height(14.dp))
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             HeatGrid(dailyCounts = daily, weeks = 12)
         }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MonoText(formatCount(total) + " requests", size = 11.sp)
+            MonoText(pick(formatCount(total) + " 次请求", formatCount(total) + " requests"), size = 11.sp)
             Spacer(Modifier.weight(1f))
-            MonoText("peak " + peak + " / day", size = 11.sp)
+            MonoText(pick("峰值 " + peak + " / 天", "peak " + peak + " / day"), size = 11.sp)
         }
     }
 }
@@ -1251,23 +1273,23 @@ private fun MobileActivityCard(heatmap: List<UsageDayBucket>) {
 @Composable
 private fun MobileExportCard(notice: String?, onCsv: () -> Unit, onJson: () -> Unit) {
     PanelCard {
-        PanelHeader("Export", subtitle = "copy this range to the clipboard", icon = AgentIcons.Download)
+        PanelHeader(pick("导出", "Export"), subtitle = pick("将该范围复制到剪贴板", "copy this range to the clipboard"), icon = AgentIcons.Download)
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onCsv) {
                 Icon(AgentIcons.Copy, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Copy CSV")
+                Text(pick("复制 CSV", "Copy CSV"))
             }
             TextButton(onClick = onJson) {
                 Icon(AgentIcons.Code, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Copy JSON")
+                Text(pick("复制 JSON", "Copy JSON"))
             }
         }
         Spacer(Modifier.height(6.dp))
         CaptionText(
-            notice ?: "Every recorded row for this range is copied locally. Nothing leaves the device.",
+            notice ?: pick("该范围的每一行记录都会复制到本机，数据不会离开设备。", "Every recorded row for this range is copied locally. Nothing leaves the device."),
             maxLines = 3,
             size = 12.sp,
         )
@@ -1278,7 +1300,7 @@ private fun MobileExportCard(notice: String?, onCsv: () -> Unit, onJson: () -> U
 private fun MobileSessionsHeader(total: Int, filtered: Int, query: String, onQuery: (String) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Sessions")
+            SectionLabel(pick("会话", "Sessions"))
             Spacer(Modifier.width(8.dp))
             MonoText(filtered.toString() + " / " + total, size = 11.sp)
         }
@@ -1288,8 +1310,8 @@ private fun MobileSessionsHeader(total: Int, filtered: Int, query: String, onQue
             onValueChange = onQuery,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text("Filter sessions") },
-            placeholder = { Text("Session, role or model") },
+            label = { Text(pick("筛选会话", "Filter sessions")) },
+            placeholder = { Text(pick("会话、角色或模型", "Session, role or model")) },
         )
     }
 }
@@ -1309,13 +1331,13 @@ private fun MobileSessionCard(session: UsageSessionBucket, now: Long) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 MonoText(
-                    session.sessionId.take(22).ifBlank { "unassigned" },
+                    session.sessionId.take(22).ifBlank { pick("未分配", "unassigned") },
                     size = 13.sp,
                     color = scheme.onSurface,
                     weight = FontWeight.Medium,
                 )
                 CaptionText(
-                    session.role.ifBlank { "worker" } + " / " + session.models.joinToString(", ").ifBlank { "unknown model" },
+                    roleLabel(session.role).ifBlank { pick("执行体", "worker") } + " / " + session.models.joinToString(", ").ifBlank { pick("未知模型", "unknown model") },
                     Modifier.padding(top = 1.dp),
                     maxLines = 1,
                 )
@@ -1333,13 +1355,13 @@ private fun MobileSessionCard(session: UsageSessionBucket, now: Long) {
         Spacer(Modifier.height(10.dp))
         Row {
             Column(Modifier.weight(1f)) {
-                KVRow("tokens", formatCount(session.tokens))
-                KVRow("calls", session.requests.toString())
+                KVRow(pick("Token", "tokens"), formatCount(session.tokens))
+                KVRow(pick("调用", "calls"), session.requests.toString())
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                KVRow("tools", session.toolCalls.toString())
-                KVRow("avg", session.avgDurationMs.toString() + "ms")
+                KVRow(pick("工具", "tools"), session.toolCalls.toString())
+                KVRow(pick("平均", "avg"), pick(session.avgDurationMs.toString() + " ms", session.avgDurationMs.toString() + "ms"))
             }
         }
         if (session.failures > 0) {
@@ -1347,7 +1369,7 @@ private fun MobileSessionCard(session: UsageSessionBucket, now: Long) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(AgentIcons.AlertTriangle, null, Modifier.size(13.dp), tint = scheme.error)
                 Spacer(Modifier.width(6.dp))
-                CaptionText(countOf(session.failures, "failure", "failures"), color = scheme.error, maxLines = 1, size = 12.sp)
+                CaptionText(pick(session.failures.toString() + " 次失败", countOf(session.failures, "failure", "failures")), color = scheme.error, maxLines = 1, size = 12.sp)
             }
         }
     }
@@ -1435,11 +1457,59 @@ private fun VerticalRule(height: Dp, inset: Dp = 8.dp) {
 }
 
 private fun compositionParts(tokens: UsageTokens): List<Pair<String, Long>> = listOf(
-    "Prompt" to tokens.input,
-    "Completion" to tokens.output,
-    "Cache read" to tokens.cacheRead,
-    "Cache write" to tokens.cacheWrite,
+    pick("提示", "Prompt") to tokens.input,
+    pick("补全", "Completion") to tokens.output,
+    pick("缓存读", "Cache read") to tokens.cacheRead,
+    pick("缓存写", "Cache write") to tokens.cacheWrite,
 )
+
+private fun rangeText(range: UsageRange): String = when (range) {
+    UsageRange.TODAY -> pick("今天", "Today")
+    UsageRange.WEEK -> pick("近 7 天", "7 days")
+    UsageRange.MONTH -> pick("近 30 天", "30 days")
+    UsageRange.ALL -> pick("全部时间", "All time")
+}
+
+private fun granularityText(granularity: UsageGranularity): String = when (granularity) {
+    UsageGranularity.HOUR -> pick("按小时", "Hourly")
+    UsageGranularity.DAY -> pick("按天", "Daily")
+    UsageGranularity.WEEK -> pick("按周", "Weekly")
+}
+
+private fun granularityWord(granularity: UsageGranularity): String = when (granularity) {
+    UsageGranularity.HOUR -> "hourly"
+    UsageGranularity.DAY -> "daily"
+    UsageGranularity.WEEK -> "weekly"
+}
+
+private fun trendSubtitle(count: Int, granularity: UsageGranularity): String = pick(
+    granularityText(granularity) + " · " + count + " 个区间",
+    countOf(count, granularityWord(granularity) + " bucket", granularityWord(granularity) + " buckets"),
+)
+
+private fun toolUsageSubtitle(tools: List<UsageToolBucket>): String {
+    val calls = tools.sumOf { it.calls }
+    val failures = tools.sumOf { it.failures }
+    return pick(
+        calls.toString() + " 次调用 / " + failures.toString() + " 次失败",
+        countOf(calls, "call", "calls") + " / " + countOf(failures, "failure", "failures"),
+    )
+}
+
+private fun rangeWireText(wire: String): String = when (wire) {
+    "today" -> "今天"
+    "7d" -> "7 天"
+    "30d" -> "30 天"
+    "all" -> "全部时间"
+    else -> wire
+}
+
+private fun granularityWireText(wire: String): String = when (wire) {
+    "hour" -> "按小时"
+    "day" -> "按天"
+    "week" -> "按周"
+    else -> wire
+}
 
 private fun countOf(count: Int, singular: String, plural: String): String {
     return count.toString() + " " + (if (count == 1) singular else plural)

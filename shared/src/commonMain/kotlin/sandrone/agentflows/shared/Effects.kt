@@ -10,6 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import sandrone.agentflows.shared.i18n.AppLanguage
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
@@ -27,6 +28,7 @@ data class EffectPrefs(
     val mode: EffectMode = EffectMode.DISABLED,
     val blurRadiusDp: Float = 12f,
     val glassTintAlpha: Float = 0.28f,
+    val language: AppLanguage = AppLanguage.ZH,
 )
 
 interface EffectPrefsStore {
@@ -44,7 +46,7 @@ class InMemoryEffectPrefsStore(initial: EffectPrefs = EffectPrefs()) : EffectPre
 
 expect fun createEffectPrefsStore(): EffectPrefsStore
 
-fun EffectPrefs.encode(): String = "${mode.name}|$blurRadiusDp|$glassTintAlpha"
+fun EffectPrefs.encode(): String = "${mode.name}|$blurRadiusDp|$glassTintAlpha|${language.tag}"
 
 fun decodeEffectPrefs(text: String?): EffectPrefs {
     val stored = text?.trim().orEmpty()
@@ -53,7 +55,8 @@ fun decodeEffectPrefs(text: String?): EffectPrefs {
     val mode = parts.getOrNull(0)?.let { raw -> runCatching { EffectMode.valueOf(raw) }.getOrNull() } ?: EffectMode.DISABLED
     val radius = parts.getOrNull(1)?.toFloatOrNull()?.coerceIn(0f, 64f) ?: 12f
     val alpha = parts.getOrNull(2)?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.28f
-    return EffectPrefs(mode = mode, blurRadiusDp = radius, glassTintAlpha = alpha)
+    val language = AppLanguage.fromTag(parts.getOrNull(3))
+    return EffectPrefs(mode = mode, blurRadiusDp = radius, glassTintAlpha = alpha, language = language)
 }
 
 internal val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }

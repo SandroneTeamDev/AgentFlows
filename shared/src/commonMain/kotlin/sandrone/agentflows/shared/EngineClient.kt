@@ -9,6 +9,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import sandrone.agentflows.shared.i18n.engineMessage
 import kotlinx.serialization.json.longOrNull
 
 internal data class EngineConnection(val port: Int, val token: String)
@@ -248,8 +249,7 @@ internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
         providers = providers,
         watchdog = watchdog,
         uptimeMs = obj["uptimeMs"].longValue() ?: 0L,
-        message = obj["message"].textValue()
-            ?: if (configured) "Local engine online" else "Local engine online · model not configured",
+        message = engineMessage(connected = true, modelConfigured = configured),
     )
 }
 

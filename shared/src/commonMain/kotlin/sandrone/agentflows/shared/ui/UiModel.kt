@@ -1,10 +1,21 @@
 package sandrone.agentflows.shared.ui
 
-enum class AgentTab(val label: String) {
-    Chat("Chat"),
-    Flows("Flows"),
-    Usage("Usage"),
-    Settings("Settings"),
+import sandrone.agentflows.shared.i18n.pick
+
+enum class AgentTab {
+    Chat,
+    Flows,
+    Usage,
+    Settings,
+    ;
+
+    val label: String
+        get() = when (this) {
+            Chat -> pick("对话", "Chat")
+            Flows -> pick("事件流", "Flows")
+            Usage -> pick("用量", "Usage")
+            Settings -> pick("设置", "Settings")
+        }
 }
 
 enum class MessageAuthor { USER, ENGINE }
@@ -40,8 +51,6 @@ fun flowToneOf(type: String): FlowTone = when (type) {
     else -> FlowTone.NEUTRAL
 }
 
-fun flowLabel(type: String): String = type.replace('_', ' ')
-
 private fun civilFromDays(days: Long): Triple<Int, Int, Int> {
     val z = days + 719468
     val era = (if (z >= 0) z else z - 146096) / 146097
@@ -76,26 +85,26 @@ fun formatShortDay(millis: Long): String {
 fun formatRelative(millis: Long, now: Long): String {
     val delta = (now - millis).coerceAtLeast(0)
     return when {
-        millis <= 0L -> "unknown"
-        delta < 60_000L -> "just now"
-        delta < 3_600_000L -> "${delta / 60_000L}m ago"
-        delta < MILLIS_PER_DAY -> "${delta / 3_600_000L}h ago"
-        else -> "${delta / MILLIS_PER_DAY}d ago"
+        millis <= 0L -> pick("未知", "unknown")
+        delta < 60_000L -> pick("刚刚", "just now")
+        delta < 3_600_000L -> pick("${delta / 60_000L} 分钟前", "${delta / 60_000L}m ago")
+        delta < MILLIS_PER_DAY -> pick("${delta / 3_600_000L} 小时前", "${delta / 3_600_000L}h ago")
+        else -> pick("${delta / MILLIS_PER_DAY} 天前", "${delta / MILLIS_PER_DAY}d ago")
     }
 }
 
 fun formatDuration(millis: Long): String {
-    if (millis <= 0L) return "0s"
+    if (millis <= 0L) return pick("0 秒", "0s")
     val totalSeconds = millis / 1000
     val days = totalSeconds / 86_400
     val hours = (totalSeconds % 86_400) / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return when {
-        days > 0 -> "${days}d ${hours}h"
-        hours > 0 -> "${hours}h ${minutes}m"
-        minutes > 0 -> "${minutes}m ${seconds}s"
-        else -> "${seconds}s"
+        days > 0 -> pick("${days} 天 ${hours} 小时", "${days}d ${hours}h")
+        hours > 0 -> pick("${hours} 小时 ${minutes} 分", "${hours}h ${minutes}m")
+        minutes > 0 -> pick("${minutes} 分 ${seconds} 秒", "${minutes}m ${seconds}s")
+        else -> pick("${seconds} 秒", "${seconds}s")
     }
 }
 

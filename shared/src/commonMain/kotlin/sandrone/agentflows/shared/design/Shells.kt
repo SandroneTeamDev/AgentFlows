@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import sandrone.agentflows.shared.i18n.pick
 import sandrone.agentflows.shared.ui.AgentIcons
 
 data class ShellNavItem(
@@ -77,7 +78,7 @@ fun DesktopShell(
                 sidebarTop()
             }
             Spacer(Modifier.height(12.dp))
-            SectionLabel("Workspace", Modifier.padding(start = 18.dp, bottom = 4.dp))
+            SectionLabel(pick("工作区", "Workspace"), Modifier.padding(start = 18.dp, bottom = 4.dp))
             Column(Modifier.padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 navItems.forEachIndexed { index, item ->
                     SidebarNavItem(

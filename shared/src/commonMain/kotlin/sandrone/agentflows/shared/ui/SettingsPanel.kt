@@ -69,19 +69,22 @@ import sandrone.agentflows.shared.design.container
 import sandrone.agentflows.shared.design.content
 import sandrone.agentflows.shared.design.isDesktop
 import sandrone.agentflows.shared.design.metrics
+import sandrone.agentflows.shared.i18n.AppLanguage
+import sandrone.agentflows.shared.i18n.pick
+import sandrone.agentflows.shared.i18n.statusLabel
 import sandrone.agentflows.shared.effectSurface
 import sandrone.agentflows.shared.nowMillis
 
-private val EffectOptions = listOf(
-    "DISABLED" to "Off",
-    "BLUR" to "Blur",
-    "GLASS" to "Glass",
-)
+private val LanguageOptions = AppLanguage.entries.map { language -> language.tag to language.nativeLabel }
+
+private fun effectOptions(): List<Pair<String, String>> =
+    EffectMode.entries.map { mode -> mode.name to effectLabel(mode) }
 
 private const val ProviderIdHint = "local"
 private const val ProviderUrlHint = "http://127.0.0.1:11434/v1"
 private const val ProviderModelsHint = "llama3, qwen2.5"
-private const val WatchdogQuestionHint = "Why did the last worker stop?"
+
+private fun watchdogQuestionHint(): String = pick("为什么上一个执行体停止了？", "Why did the last worker stop?")
 
 @Composable
 fun SettingsPanel(
@@ -209,31 +212,34 @@ private fun RuntimeSection(snapshot: WorkspaceSnapshot) {
     val desktop = isDesktop()
     val scheme = MaterialTheme.colorScheme
     SettingsSection(
-        title = "Local runtime",
+        title = pick("本地运行时", "Local runtime"),
         icon = AgentIcons.Wave,
         subtitle = snapshot.message,
         tone = Tone.ACCENT,
-        status = { StatusPill(snapshot.connected, "online", "offline") },
+        status = { StatusPill(snapshot.connected, statusLabel("online"), statusLabel("offline")) },
     ) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(if (desktop) Space.lg else Space.md),
         ) {
-            StatBlock("uptime", formatDuration(snapshot.uptimeMs), Modifier.weight(1f))
-            StatBlock("workers", snapshot.workers.size.toString(), Modifier.weight(1f))
-            StatBlock("events", snapshot.flows.size.toString(), Modifier.weight(1f))
+            StatBlock(pick("运行时长", "uptime"), formatDuration(snapshot.uptimeMs), Modifier.weight(1f))
+            StatBlock(pick("执行体", "workers"), snapshot.workers.size.toString(), Modifier.weight(1f))
+            StatBlock(pick("事件", "events"), snapshot.flows.size.toString(), Modifier.weight(1f))
         }
         Spacer(Modifier.height(Space.sm))
         ThinRule(alpha = if (desktop) 0.3f else 0.35f)
         KVRow(
-            "Engine",
-            if (snapshot.connected) "online" else "offline",
+            pick("引擎", "Engine"),
+            statusLabel(if (snapshot.connected) "online" else "offline"),
             valueColor = if (snapshot.connected) scheme.primary else scheme.error,
         )
-        KVRow("Model routing", if (snapshot.modelConfigured) "configured" else "not configured")
         KVRow(
-            "Watchdog",
-            if (snapshot.watchdog.healthy) "healthy" else "attention",
+            pick("模型路由", "Model routing"),
+            if (snapshot.modelConfigured) pick("已配置", "configured") else pick("未配置", "not configured"),
+        )
+        KVRow(
+            pick("看门狗", "Watchdog"),
+            statusLabel(if (snapshot.watchdog.healthy) "healthy" else "attention"),
             valueColor = if (snapshot.watchdog.healthy) null else scheme.error,
         )
         if (desktop) {
@@ -248,14 +254,14 @@ private fun AppearanceSection(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit
     val desktop = isDesktop()
     val scheme = MaterialTheme.colorScheme
     SettingsSection(
-        title = "Appearance",
+        title = pick("外观", "Appearance"),
         icon = AgentIcons.Settings,
-        subtitle = "backdrop effect for capsule surfaces",
+        subtitle = pick("胶囊表面的背景效果", "backdrop effect for capsule surfaces"),
         tone = Tone.NEUTRAL,
     ) {
         if (desktop) {
             ChipFilterRow(
-                options = EffectOptions,
+                options = effectOptions(),
                 selected = prefs.mode.name,
                 onSelect = { key ->
                     EffectMode.entries.firstOrNull { it.name == key }?.let { mode -> onPrefs(prefs.copy(mode = mode)) }
@@ -269,9 +275,9 @@ private fun AppearanceSection(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit
         Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (desktop) {
-                SectionLabel("Blur radius", Modifier.weight(1f))
+                SectionLabel(pick("模糊半径", "Blur radius"), Modifier.weight(1f))
             } else {
-                BodyText("Blur radius", Modifier.weight(1f), maxLines = 1)
+                BodyText(pick("模糊半径", "Blur radius"), Modifier.weight(1f), maxLines = 1)
             }
             MonoText(
                 "${prefs.blurRadiusDp.toInt()} dp",
@@ -294,9 +300,38 @@ private fun AppearanceSection(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit
         )
         Spacer(Modifier.height(Space.xs))
         MonoText(
-            "radius ${prefs.blurRadiusDp.toInt()} dp · tint ${(prefs.glassTintAlpha * 100f).toInt()}%",
+            pick(
+                "半径 ${prefs.blurRadiusDp.toInt()} dp · 色调 ${(prefs.glassTintAlpha * 100f).toInt()}%",
+                "radius ${prefs.blurRadiusDp.toInt()} dp · tint ${(prefs.glassTintAlpha * 100f).toInt()}%",
+            ),
             size = if (desktop) 9.5.sp else 11.sp,
         )
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        ThinRule(alpha = if (desktop) 0.3f else 0.35f)
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (desktop) {
+                SectionLabel(pick("语言", "Language"), Modifier.weight(1f))
+            } else {
+                BodyText(pick("语言", "Language"), Modifier.weight(1f), maxLines = 1)
+            }
+        }
+        CaptionText(
+            pick("界面语言，默认中文", "Interface language, Chinese by default"),
+            Modifier.padding(top = 2.dp),
+            maxLines = 2,
+            size = if (desktop) 11.sp else 13.sp,
+        )
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        if (desktop) {
+            ChipFilterRow(
+                options = LanguageOptions,
+                selected = prefs.language.tag,
+                onSelect = { tag -> onPrefs(prefs.copy(language = AppLanguage.fromTag(tag))) },
+            )
+        } else {
+            LanguageSegments(prefs.language) { language -> onPrefs(prefs.copy(language = language)) }
+        }
     }
 }
 
@@ -335,6 +370,40 @@ private fun EffectSegments(selected: EffectMode, onSelect: (EffectMode) -> Unit)
 }
 
 @Composable
+private fun LanguageSegments(selected: AppLanguage, onSelect: (AppLanguage) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(Radius.md)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(scheme.surfaceContainerHighest).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppLanguage.entries.forEach { language ->
+            val active = language == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(if (active) scheme.primary else Color.Transparent)
+                    .clickable { onSelect(language) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    language.nativeLabel,
+                    maxLines = 1,
+                    color = if (active) scheme.onPrimary else scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 13.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EffectPreview(prefs: EffectPrefs) {
     val desktop = isDesktop()
     val scheme = MaterialTheme.colorScheme
@@ -351,7 +420,7 @@ private fun EffectPreview(prefs: EffectPrefs) {
         PulsingDot(size = if (desktop) 5.dp else 6.dp)
         Spacer(Modifier.width(if (desktop) 7.dp else 9.dp))
         MonoText(
-            if (prefs.mode == EffectMode.DISABLED) "flat surface" else "live backdrop",
+            if (prefs.mode == EffectMode.DISABLED) pick("平面底色", "flat surface") else pick("实时背景", "live backdrop"),
             size = if (desktop) 10.sp else 11.sp,
         )
         Spacer(Modifier.weight(1f))
@@ -376,16 +445,16 @@ private fun ModelsSection(
         onRegisterProvider(providerId.trim(), baseUrl.trim(), parseModels(models))
     }
     SettingsSection(
-        title = "Models",
+        title = pick("模型", "Models"),
         icon = AgentIcons.Bolt,
-        subtitle = "registered providers stay on this device",
+        subtitle = pick("已注册的服务商仅保存在本机", "registered providers stay on this device"),
         tone = Tone.POSITIVE,
         status = {
             MetaChip(
                 text = when (snapshot.providers.size) {
-                    0 -> "none"
-                    1 -> "1 provider"
-                    else -> "${snapshot.providers.size} providers"
+                    0 -> pick("无", "none")
+                    1 -> pick("1 个服务商", "1 provider")
+                    else -> pick("${snapshot.providers.size} 个服务商", "${snapshot.providers.size} providers")
                 },
                 tone = if (snapshot.providers.isEmpty()) Tone.MUTED else Tone.POSITIVE,
                 mono = true,
@@ -395,8 +464,11 @@ private fun ModelsSection(
         if (snapshot.providers.isEmpty()) {
             EmptyHint(
                 icon = AgentIcons.Database,
-                title = "No providers registered",
-                detail = "Register a local endpoint to let the Router dispatch model calls on this device.",
+                title = pick("尚未注册服务商", "No providers registered"),
+                detail = pick(
+                    "注册一个本地端点，让路由在本机分派模型调用。",
+                    "Register a local endpoint to let the Router dispatch model calls on this device.",
+                ),
                 dense = desktop,
             )
         } else {
@@ -411,7 +483,7 @@ private fun ModelsSection(
         ThinRule(alpha = if (desktop) 0.3f else 0.35f)
         Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
         if (desktop) {
-            SectionLabel("Register provider")
+            SectionLabel(pick("注册服务商", "Register provider"))
             Spacer(Modifier.height(Space.xs))
             Row(
                 Modifier.fillMaxWidth(),
@@ -419,7 +491,7 @@ private fun ModelsSection(
                 verticalAlignment = Alignment.Top,
             ) {
                 SettingsField(
-                    label = "Provider id",
+                    label = pick("服务商 ID", "Provider id"),
                     value = providerId,
                     onValueChange = { providerId = it },
                     modifier = Modifier.weight(0.8f),
@@ -427,7 +499,7 @@ private fun ModelsSection(
                     enabled = !providerBusy,
                 )
                 SettingsField(
-                    label = "Base URL",
+                    label = pick("基础地址", "Base URL"),
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
                     modifier = Modifier.weight(1.4f),
@@ -435,7 +507,7 @@ private fun ModelsSection(
                     enabled = !providerBusy,
                 )
                 SettingsField(
-                    label = "Models",
+                    label = pick("模型", "Models"),
                     value = models,
                     onValueChange = { models = it },
                     modifier = Modifier.weight(1.2f),
@@ -449,20 +521,26 @@ private fun ModelsSection(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsAction("Register", AgentIcons.Plus, onClick = register, enabled = canRegister)
-                SettingsAction("Probe", AgentIcons.Wave, onClick = onProbe, enabled = !providerBusy, filled = false)
+                SettingsAction(pick("注册", "Register"), AgentIcons.Plus, onClick = register, enabled = canRegister)
+                SettingsAction(
+                    pick("探测", "Probe"),
+                    AgentIcons.Wave,
+                    onClick = onProbe,
+                    enabled = !providerBusy,
+                    filled = false,
+                )
                 Spacer(Modifier.weight(1f))
                 if (providerBusy) {
                     BusyIndicator()
                     Spacer(Modifier.width(6.dp))
-                    MonoText("contacting provider", size = 9.5.sp)
+                    MonoText(pick("正在连接服务商", "contacting provider"), size = 9.5.sp)
                 } else {
-                    MonoText("comma separated models", size = 9.5.sp)
+                    MonoText(pick("逗号分隔的模型", "comma separated models"), size = 9.5.sp)
                 }
             }
         } else {
             SettingsField(
-                label = "Provider id",
+                label = pick("服务商 ID", "Provider id"),
                 value = providerId,
                 onValueChange = { providerId = it },
                 placeholder = ProviderIdHint,
@@ -470,7 +548,7 @@ private fun ModelsSection(
             )
             Spacer(Modifier.height(Space.md))
             SettingsField(
-                label = "Base URL",
+                label = pick("基础地址", "Base URL"),
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
                 placeholder = ProviderUrlHint,
@@ -478,7 +556,7 @@ private fun ModelsSection(
             )
             Spacer(Modifier.height(Space.md))
             SettingsField(
-                label = "Models, comma separated",
+                label = pick("模型，逗号分隔", "Models, comma separated"),
                 value = models,
                 onValueChange = { models = it },
                 placeholder = ProviderModelsHint,
@@ -491,20 +569,26 @@ private fun ModelsSection(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingsAction(
-                    "Register",
+                    pick("注册", "Register"),
                     AgentIcons.Plus,
                     onClick = register,
                     modifier = Modifier.weight(1f),
                     enabled = canRegister,
                 )
-                SettingsAction("Probe", AgentIcons.Wave, onClick = onProbe, enabled = !providerBusy, filled = false)
+                SettingsAction(
+                    pick("探测", "Probe"),
+                    AgentIcons.Wave,
+                    onClick = onProbe,
+                    enabled = !providerBusy,
+                    filled = false,
+                )
             }
             if (providerBusy) {
                 Spacer(Modifier.height(Space.sm))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     BusyIndicator()
                     Spacer(Modifier.width(Space.sm))
-                    MonoText("contacting provider", size = 11.sp)
+                    MonoText(pick("正在连接服务商", "contacting provider"), size = 11.sp)
                 }
             }
         }
@@ -515,7 +599,10 @@ private fun ModelsSection(
         if (desktop) {
             Spacer(Modifier.height(Space.xs))
             CaptionText(
-                "Probe asks the endpoint for its model list before saving anything.",
+                pick(
+                    "探测会先向端点获取模型列表，再保存。",
+                    "Probe asks the endpoint for its model list before saving anything.",
+                ),
                 maxLines = 2,
                 size = 10.5.sp,
             )
@@ -540,7 +627,7 @@ private fun ProviderRow(provider: ProviderEntry) {
         Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
         Column(Modifier.weight(1f)) {
             Text(
-                provider.id.ifBlank { "unnamed provider" },
+                provider.id.ifBlank { pick("未命名服务商", "unnamed provider") },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -549,7 +636,7 @@ private fun ProviderRow(provider: ProviderEntry) {
                 ),
             )
             CaptionText(
-                provider.baseUrl.ifBlank { "no base url" },
+                provider.baseUrl.ifBlank { pick("无基础地址", "no base url") },
                 Modifier.padding(top = 1.dp),
                 maxLines = 1,
                 size = if (desktop) 10.5.sp else 12.sp,
@@ -557,9 +644,9 @@ private fun ProviderRow(provider: ProviderEntry) {
         }
         Spacer(Modifier.width(Space.sm))
         val modelLabel = when (provider.models.size) {
-            0 -> "no models"
-            1 -> "1 model"
-            else -> "${provider.models.size} models"
+            0 -> pick("无模型", "no models")
+            1 -> pick("1 个模型", "1 model")
+            else -> pick("${provider.models.size} 个模型", "${provider.models.size} models")
         }
         if (desktop) {
             MonoText(modelLabel, size = 10.5.sp)
@@ -614,13 +701,13 @@ private fun WatchdogSection(
         }
     }
     SettingsSection(
-        title = "Watchdog",
+        title = pick("看门狗", "Watchdog"),
         icon = AgentIcons.Shield,
-        subtitle = "independent control loop",
+        subtitle = pick("独立控制循环", "independent control loop"),
         tone = if (snapshot.watchdog.healthy) Tone.POSITIVE else Tone.DANGER,
-        status = { StatusPill(snapshot.watchdog.healthy, "healthy", "attention") },
+        status = { StatusPill(snapshot.watchdog.healthy, statusLabel("healthy"), statusLabel("attention")) },
     ) {
-        KVRow("Last heartbeat", formatRelative(snapshot.watchdog.lastHeartbeat, nowMillis()))
+        KVRow(pick("最后心跳", "Last heartbeat"), formatRelative(snapshot.watchdog.lastHeartbeat, nowMillis()))
         if (alerts.isEmpty()) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -631,13 +718,13 @@ private fun WatchdogSection(
                 )
                 Spacer(Modifier.width(if (desktop) 6.dp else Space.sm))
                 CaptionText(
-                    "No alerts recorded. The loop is quiet.",
+                    pick("暂无告警，循环平稳。", "No alerts recorded. The loop is quiet."),
                     maxLines = 2,
                     size = if (desktop) 11.sp else 13.sp,
                 )
             }
         } else {
-            SectionLabel("Recent alerts", color = scheme.error)
+            SectionLabel(pick("最近告警", "Recent alerts"), color = scheme.error)
             Spacer(Modifier.height(Space.xs))
             alerts.takeLast(4).forEach { alert ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -669,15 +756,15 @@ private fun WatchdogSection(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 SettingsField(
-                    label = "Ask the watchdog",
+                    label = pick("向看门狗提问", "Ask the watchdog"),
                     value = question,
                     onValueChange = { question = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = WatchdogQuestionHint,
+                    placeholder = watchdogQuestionHint(),
                     enabled = !busy,
                 )
                 SettingsAction(
-                    "Ask",
+                    pick("提问", "Ask"),
                     AgentIcons.Send,
                     onClick = submit,
                     modifier = Modifier.padding(bottom = 15.dp),
@@ -690,15 +777,15 @@ private fun WatchdogSection(
             }
         } else {
             SettingsField(
-                label = "Ask the watchdog",
+                label = pick("向看门狗提问", "Ask the watchdog"),
                 value = question,
                 onValueChange = { question = it },
-                placeholder = WatchdogQuestionHint,
+                placeholder = watchdogQuestionHint(),
                 enabled = !busy,
             )
             Spacer(Modifier.height(Space.md))
             SettingsAction(
-                if (busy) "Asking" else "Ask the watchdog",
+                if (busy) pick("提问中", "Asking") else pick("向看门狗提问", "Ask the watchdog"),
                 AgentIcons.Send,
                 onClick = submit,
                 modifier = Modifier.fillMaxWidth(),
@@ -710,12 +797,12 @@ private fun WatchdogSection(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 PulsingDot(size = if (desktop) 5.dp else 6.dp)
                 Spacer(Modifier.width(6.dp))
-                MonoText("watchdog is working", size = if (desktop) 9.5.sp else 11.sp)
+                MonoText(pick("看门狗正在工作", "watchdog is working"), size = if (desktop) 9.5.sp else 11.sp)
             }
         }
         if (answer != null) {
             Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
-            SectionLabel("Answer")
+            SectionLabel(pick("回答", "Answer"))
             Spacer(Modifier.height(Space.xs))
             CodeSurface(answer, maxLines = if (desktop) 12 else 8)
         }
@@ -727,13 +814,17 @@ private fun WorkersSection(snapshot: WorkspaceSnapshot, onCancelTask: (String) -
     val desktop = isDesktop()
     val empty = snapshot.tasks.isEmpty() && snapshot.workers.isEmpty()
     SettingsSection(
-        title = "Workers and tasks",
+        title = pick("执行体与任务", "Workers and tasks"),
         icon = AgentIcons.Users,
-        subtitle = "cancel stops the worker and marks the task failed",
+        subtitle = pick("取消会停止执行体，并把任务标记为失败", "cancel stops the worker and marks the task failed"),
         tone = Tone.WARNING,
         status = {
             MetaChip(
-                text = if (empty) "idle" else "${snapshot.tasks.size} tasks",
+                text = if (empty) {
+                    pick("空闲", "idle")
+                } else {
+                    pick("${snapshot.tasks.size} 个任务", "${snapshot.tasks.size} tasks")
+                },
                 tone = if (empty) Tone.MUTED else Tone.NEUTRAL,
                 mono = true,
             )
@@ -742,8 +833,11 @@ private fun WorkersSection(snapshot: WorkspaceSnapshot, onCancelTask: (String) -
         if (empty) {
             EmptyHint(
                 icon = AgentIcons.Users,
-                title = "No workers dispatched",
-                detail = "Configure a model, then send a task. Worker runs and their tasks show up here.",
+                title = pick("尚未分派执行体", "No workers dispatched"),
+                detail = pick(
+                    "先配置模型，再发送任务。执行体的运行记录与任务会显示在这里。",
+                    "Configure a model, then send a task. Worker runs and their tasks show up here.",
+                ),
                 dense = desktop,
             )
         } else {
@@ -759,7 +853,10 @@ private fun WorkersSection(snapshot: WorkspaceSnapshot, onCancelTask: (String) -
             }
             if (snapshot.tasks.isEmpty()) {
                 CaptionText(
-                    "No task rows yet. The engine reports tasks once a worker claims one.",
+                    pick(
+                        "暂无任务记录。执行体领取任务后，引擎会在这里上报。",
+                        "No task rows yet. The engine reports tasks once a worker claims one.",
+                    ),
                     maxLines = 2,
                     size = if (desktop) 11.sp else 13.sp,
                 )
@@ -779,7 +876,8 @@ private fun WorkersSection(snapshot: WorkspaceSnapshot, onCancelTask: (String) -
 private fun WorkerChip(worker: WorkerEntry) {
     val running = worker.status.equals("running", ignoreCase = true) ||
         worker.status.equals("busy", ignoreCase = true)
-    val label = worker.id.ifBlank { "worker" } + " · " + worker.status.ifBlank { "unknown" }
+    val label = worker.id.ifBlank { pick("执行体", "worker") } + " · " +
+        statusLabel(worker.status.ifBlank { "unknown" })
     MetaChip(text = label, tone = if (running) Tone.ACCENT else Tone.NEUTRAL, mono = true)
 }
 
@@ -800,7 +898,7 @@ private fun TaskRow(task: TaskEntry, onCancelTask: (String) -> Unit) {
         Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
         Column(Modifier.weight(1f)) {
             Text(
-                task.title.ifBlank { "untitled task" },
+                task.title.ifBlank { pick("未命名任务", "untitled task") },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -810,7 +908,7 @@ private fun TaskRow(task: TaskEntry, onCancelTask: (String) -> Unit) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CaptionText(
-                    task.status.ifBlank { "unknown" },
+                    statusLabel(task.status.ifBlank { "unknown" }),
                     maxLines = 1,
                     size = if (desktop) 10.5.sp else 12.sp,
                 )
@@ -845,7 +943,7 @@ private fun CancelTaskAction(onClick: () -> Unit) {
         )
         Spacer(Modifier.width(Space.xs))
         Text(
-            "Cancel",
+            pick("取消", "Cancel"),
             maxLines = 1,
             color = scheme.error,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = if (desktop) 10.5.sp else 12.sp),
@@ -991,13 +1089,22 @@ private fun parseModels(text: String): String =
     text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
 
 private fun effectLabel(mode: EffectMode): String = when (mode) {
-    EffectMode.DISABLED -> "Off"
-    EffectMode.BLUR -> "Blur"
-    EffectMode.GLASS -> "Glass"
+    EffectMode.DISABLED -> pick("关闭", "Off")
+    EffectMode.BLUR -> pick("模糊", "Blur")
+    EffectMode.GLASS -> pick("玻璃", "Glass")
 }
 
 private fun effectExplanation(mode: EffectMode): String = when (mode) {
-    EffectMode.DISABLED -> "Effects are off. Capsule surfaces fall back to a flat container colour."
-    EffectMode.BLUR -> "Blur samples the backdrop at the radius above. Android 10 and later renders it through a capture-backed layer."
-    EffectMode.GLASS -> "Glass applies a fixed optical preset. The radius control only applies to Blur."
+    EffectMode.DISABLED -> pick(
+        "效果已关闭。胶囊表面回退为纯色容器。",
+        "Effects are off. Capsule surfaces fall back to a flat container colour.",
+    )
+    EffectMode.BLUR -> pick(
+        "模糊按上方半径对背景采样。Android 10 及以上通过截图层渲染。",
+        "Blur samples the backdrop at the radius above. Android 10 and later renders it through a capture-backed layer.",
+    )
+    EffectMode.GLASS -> pick(
+        "玻璃使用固定的光学预设。半径仅对模糊生效。",
+        "Glass applies a fixed optical preset. The radius control only applies to Blur.",
+    )
 }

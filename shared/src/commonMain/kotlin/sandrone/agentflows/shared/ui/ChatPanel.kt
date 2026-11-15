@@ -67,13 +67,16 @@ import sandrone.agentflows.shared.design.Tone
 import sandrone.agentflows.shared.effectSurface
 import sandrone.agentflows.shared.design.isDesktop
 import sandrone.agentflows.shared.design.metrics
+import sandrone.agentflows.shared.i18n.pick
+import sandrone.agentflows.shared.i18n.statusLabel
 import sandrone.agentflows.shared.nowMillis
 
-private val Suggestions = listOf(
-    "Summarise what the router is doing right now",
-    "Show the most recent tool calls",
-    "Explain why the last worker stopped",
-)
+private val Suggestions: List<String>
+    get() = listOf(
+        pick("总结路由当前正在做什么", "Summarise what the router is doing right now"),
+        pick("查看最近的工具调用", "Show the most recent tool calls"),
+        pick("解释上一个执行体为何停止", "Explain why the last worker stopped"),
+    )
 
 @Composable
 fun ChatPanel(
@@ -138,15 +141,15 @@ private fun MobileIntro(snapshot: WorkspaceSnapshot, onInput: (String) -> Unit) 
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
         )
         CaptionText(
-            if (snapshot.connected) "Local event-flow workspace is online" else "The local engine is not reachable on this device",
+            if (snapshot.connected) pick("本地事件流工作区在线", "Local event-flow workspace is online") else pick("本地引擎在此设备上无法连接", "The local engine is not reachable on this device"),
             Modifier.padding(top = 6.dp),
             maxLines = 2,
             size = 13.sp,
         )
         Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MetaChip(if (snapshot.modelConfigured) "model ready" else "model off", tone = if (snapshot.modelConfigured) Tone.ACCENT else Tone.MUTED)
-            MetaChip("${snapshot.workers.size} workers")
-            MetaChip("${snapshot.flows.size} events")
+            MetaChip(if (snapshot.modelConfigured) pick("模型就绪", "model ready") else pick("模型未配置", "model off"), tone = if (snapshot.modelConfigured) Tone.ACCENT else Tone.MUTED)
+            MetaChip(pick("${snapshot.workers.size} 个执行体", "${snapshot.workers.size} workers"))
+            MetaChip(pick("${snapshot.flows.size} 条事件", "${snapshot.flows.size} events"))
         }
         Column(
             Modifier.padding(top = 22.dp).widthIn(max = 340.dp),
@@ -171,21 +174,21 @@ private fun DesktopIntro(snapshot: WorkspaceSnapshot, onInput: (String) -> Unit)
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
                 )
                 CaptionText(
-                    if (snapshot.connected) "Local engine online" else "Local engine unreachable",
+                    if (snapshot.connected) pick("本地引擎在线", "Local engine online") else pick("本地引擎无法连接", "Local engine unreachable"),
                     maxLines = 1,
                 )
             }
             Spacer(Modifier.weight(1f))
-            MetaChip(if (snapshot.modelConfigured) "model ready" else "model off", tone = if (snapshot.modelConfigured) Tone.ACCENT else Tone.MUTED)
+            MetaChip(if (snapshot.modelConfigured) pick("模型就绪", "model ready") else pick("模型未配置", "model off"), tone = if (snapshot.modelConfigured) Tone.ACCENT else Tone.MUTED)
         }
         Spacer(Modifier.height(14.dp))
         CaptionText(
-            "Send a task and the Router records it as a Trigger. Workers appear in the Flows timeline with their tool arguments and results.",
+            pick("发送任务后，路由会将其记录为触发；执行体会连同工具参数与结果一起出现在事件流时间线上。", "Send a task and the Router records it as a Trigger. Workers appear in the Flows timeline with their tool arguments and results."),
             maxLines = 3,
             size = 12.sp,
         )
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Try")
+        SectionLabel(pick("试试", "Try"))
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Suggestions.forEach { suggestion ->
@@ -290,13 +293,13 @@ private fun MobileEngineMessage(message: ChatMessage) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Router",
+                    pick("路由", "Router"),
                     style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.primary,
                 )
                 if (message.status != null) {
                     Spacer(Modifier.width(6.dp))
-                    MetaChip(message.status, tone = Tone.MUTED, mono = true)
+                    MetaChip(statusLabel(message.status), tone = Tone.MUTED, mono = true)
                 }
                 Spacer(Modifier.weight(1f))
                 MonoText(formatClock(message.timestamp), size = 10.sp)
@@ -344,7 +347,7 @@ private fun DesktopMessageList(messages: List<ChatMessage>, modifier: Modifier =
 private fun DesktopUserMessage(message: ChatMessage) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("You")
+            SectionLabel(pick("你", "You"))
             Spacer(Modifier.weight(1f))
             MonoText(formatClock(message.timestamp), size = 9.5.sp)
         }
@@ -374,13 +377,13 @@ private fun DesktopEngineMessage(message: ChatMessage) {
             Icon(AgentIcons.Bolt, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(6.dp))
             Text(
-                "Router",
+                pick("路由", "Router"),
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.primary,
             )
             if (message.status != null) {
                 Spacer(Modifier.width(6.dp))
-                MetaChip(message.status, tone = Tone.MUTED, mono = true)
+                MetaChip(statusLabel(message.status), tone = Tone.MUTED, mono = true)
             }
             Spacer(Modifier.weight(1f))
             MonoText(formatClock(message.timestamp), size = 9.5.sp)
@@ -421,7 +424,7 @@ private fun PayloadToggle(expanded: Boolean, lineCount: Int, onClick: () -> Unit
         )
         Spacer(Modifier.width(4.dp))
         MonoText(
-            if (expanded) "hide payload" else "payload · ${lineCount}L",
+            if (expanded) pick("收起载荷", "hide payload") else pick("载荷 · ${lineCount} 行", "payload · ${lineCount}L"),
             size = if (desktop) 10.sp else 11.sp,
         )
     }
@@ -452,7 +455,7 @@ private fun MobileComposer(
             input = input,
             onInput = onInput,
             onSend = onSend,
-            placeholder = "Send a task to the Router",
+            placeholder = pick("向路由发送任务", "Send a task to the Router"),
             modifier = Modifier.weight(1f),
         )
         SendButton(
@@ -492,7 +495,7 @@ private fun DesktopComposer(
                 input = input,
                 onInput = onInput,
                 onSend = onSend,
-                placeholder = "Message the Router, or describe a task",
+                placeholder = pick("给路由发消息，或描述一个任务", "Message the Router, or describe a task"),
                 modifier = Modifier.weight(1f),
             )
             if (busy) {
@@ -507,7 +510,7 @@ private fun DesktopComposer(
             )
         }
         Row(Modifier.padding(start = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonoText("enter to send · shift+enter for a new line", size = 9.5.sp)
+            MonoText(pick("回车发送 · Shift+回车换行", "enter to send · shift+enter for a new line"), size = 9.5.sp)
         }
     }
 }

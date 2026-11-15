@@ -52,6 +52,10 @@ import sandrone.agentflows.shared.design.StatusBarSeparator
 import sandrone.agentflows.shared.design.StatusDot
 import sandrone.agentflows.shared.design.ThinRule
 import sandrone.agentflows.shared.design.Tone
+import sandrone.agentflows.shared.i18n.AppLocale
+import sandrone.agentflows.shared.i18n.engineMessage
+import sandrone.agentflows.shared.i18n.pick
+import sandrone.agentflows.shared.i18n.statusLabel
 import sandrone.agentflows.shared.ui.AgentIcons
 import sandrone.agentflows.shared.ui.AgentTab
 import sandrone.agentflows.shared.ui.ChatMessage
@@ -70,7 +74,9 @@ fun AgentFlowsApp(
     dynamicScheme: ColorScheme? = null,
 ) {
     val store = remember { createEffectPrefsStore() }
-    var prefs by remember { mutableStateOf(store.load()) }
+    var prefs by remember {
+        mutableStateOf(store.load().also { AppLocale.language = it.language })
+    }
     var snapshot by remember { mutableStateOf(WorkspaceSnapshot()) }
     var tab by remember { mutableStateOf(AgentTab.Chat) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -93,7 +99,7 @@ fun AgentFlowsApp(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                snapshot.copy(connected = false, message = "Local engine unavailable")
+                snapshot.copy(connected = false, message = engineMessage(connected = false, modelConfigured = snapshot.modelConfigured))
             }
             delay(2000)
         }
@@ -101,6 +107,7 @@ fun AgentFlowsApp(
 
     fun updatePrefs(next: EffectPrefs) {
         prefs = next
+        AppLocale.language = next.language
         store.save(next)
     }
 
@@ -111,7 +118,7 @@ fun AgentFlowsApp(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                snapshot.copy(connected = false, message = "Local engine unavailable")
+                snapshot.copy(connected = false, message = engineMessage(connected = false, modelConfigured = snapshot.modelConfigured))
             }
         }
     }
@@ -133,9 +140,9 @@ fun AgentFlowsApp(
                 val triggerId = result.substringBefore('|').ifBlank { "unavailable" }
                 val state = result.substringAfter('|', "").ifBlank { "accepted" }
                 val body = if (state == "pending_configuration") {
-                    "Task recorded as a Trigger. The Router is waiting for a model before it dispatches a worker."
+                    pick("任务已记录为触发，路由正在等待模型就绪后再分派执行体。", "Task recorded as a Trigger. The Router is waiting for a model before it dispatches a worker.")
                 } else {
-                    "Trigger queued for the Router."
+                    pick("触发已进入路由队列。", "Trigger queued for the Router.")
                 }
                 messages = messages + ChatMessage(
                     id = randomToken(),
@@ -152,7 +159,7 @@ fun AgentFlowsApp(
                 messages = messages + ChatMessage(
                     id = randomToken(),
                     author = MessageAuthor.ENGINE,
-                    text = "Submission failed: ${error.message ?: "unknown error"}",
+                    text = pick("提交失败：${error.message ?: "未知错误"}", "Submission failed: ${error.message ?: "unknown error"}"),
                     status = "error",
                     timestamp = nowMillis(),
                 )
@@ -214,7 +221,7 @@ fun AgentFlowsApp(
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (error: Exception) {
-                                            "Watchdog is unreachable: ${error.message ?: "unknown error"}"
+                                            pick("看门狗无法连接：${error.message ?: "未知错误"}", "Watchdog is unreachable: ${error.message ?: "unknown error"}")
                                         }
                                         watchdogBusy = false
                                     }
@@ -228,12 +235,12 @@ fun AgentFlowsApp(
                                                 baseUrl,
                                                 models.split(',').map { it.trim() }.filter { it.isNotEmpty() },
                                             )
-                                            probeResult = "Provider ${id} registered."
+                                            probeResult = pick("服务商 ${id} 已注册。", "Provider ${id} registered.")
                                             snapshot = client.snapshot()
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (error: Exception) {
-                                            probeResult = "Registration failed: ${error.message ?: "unknown error"}"
+                                            probeResult = pick("注册失败：${error.message ?: "未知错误"}", "Registration failed: ${error.message ?: "unknown error"}")
                                         }
                                         providerBusy = false
                                     }
@@ -243,11 +250,11 @@ fun AgentFlowsApp(
                                     scope.launch {
                                         probeResult = try {
                                             val healthy = client.probeModels()
-                                            if (healthy) "Provider responded." else "Provider did not respond."
+                                            if (healthy) pick("服务商响应正常。", "Provider responded.") else pick("服务商未响应。", "Provider did not respond.")
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (error: Exception) {
-                                            "Probe failed: ${error.message ?: "unknown error"}"
+                                            pick("探测失败：${error.message ?: "未知错误"}", "Probe failed: ${error.message ?: "unknown error"}")
                                         }
                                         providerBusy = false
                                     }
@@ -262,7 +269,7 @@ fun AgentFlowsApp(
                                         } catch (error: CancellationException) {
                                             throw error
                                         } catch (_: Exception) {
-                                            snapshot = snapshot.copy(connected = false, message = "Cancel request failed")
+                                            snapshot = snapshot.copy(connected = false, message = pick("取消请求失败", "Cancel request failed"))
                                         }
                                     }
                                 },
@@ -281,11 +288,11 @@ fun AgentFlowsApp(
                         headerSubtitle = snapshot.message,
                         headerChips = {
                             MetaChip(
-                                if (snapshot.modelConfigured) "model ready" else "model off",
+                                if (snapshot.modelConfigured) pick("模型就绪", "model ready") else pick("模型未配置", "model off"),
                                 tone = if (snapshot.modelConfigured) Tone.ACCENT else Tone.MUTED,
                             )
-                            MetaChip("${snapshot.workers.size} workers", mono = true)
-                            MetaChip("${snapshot.flows.size} events", mono = true)
+                            MetaChip(pick("${snapshot.workers.size} 个执行体", "${snapshot.workers.size} workers"), mono = true)
+                            MetaChip(pick("${snapshot.flows.size} 条事件", "${snapshot.flows.size} events"), mono = true)
                         },
                         headerActions = {
                             GhostIconButton(AgentIcons.Refresh, onClick = { refresh() })
@@ -297,35 +304,35 @@ fun AgentFlowsApp(
                                     StatusDot(snapshot.connected)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        "Local engine",
+                                        pick("本地引擎", "Local engine"),
                                         Modifier.weight(1f),
                                         maxLines = 1,
                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                                     )
-                                    MonoText(if (snapshot.connected) "online" else "offline", size = 10.sp)
+                                    MonoText(statusLabel(if (snapshot.connected) "online" else "offline"), size = 10.sp)
                                 }
                                 CaptionText(snapshot.message, maxLines = 2, size = 10.5.sp)
                                 ThinRule(alpha = 0.4f)
-                                KVRow("model", if (snapshot.modelConfigured) "ready" else "not set")
-                                KVRow("watchdog", if (snapshot.watchdog.healthy) "healthy" else "attention")
+                                KVRow(pick("模型", "model"), if (snapshot.modelConfigured) pick("就绪", "ready") else pick("未设置", "not set"))
+                                KVRow(pick("看门狗", "watchdog"), statusLabel(if (snapshot.watchdog.healthy) "healthy" else "attention"))
                             }
                         },
                         sidebarBottom = {
-                            KVRow("uptime", formatDuration(snapshot.uptimeMs))
-                            KVRow("workers", snapshot.workers.size.toString())
-                            KVRow("tasks", snapshot.tasks.size.toString())
+                            KVRow(pick("运行时长", "uptime"), formatDuration(snapshot.uptimeMs))
+                            KVRow(pick("执行体", "workers"), snapshot.workers.size.toString())
+                            KVRow(pick("任务", "tasks"), snapshot.tasks.size.toString())
                             ThinRule(alpha = 0.4f)
                             MonoText(AppVersion, size = 9.5.sp)
                         },
                         statusBar = {
                             StatusDot(snapshot.connected)
-                            StatusBarItem("engine", if (snapshot.connected) "online" else "offline")
+                            StatusBarItem(pick("引擎", "engine"), statusLabel(if (snapshot.connected) "online" else "offline"))
                             StatusBarSeparator()
-                            StatusBarItem("events", snapshot.flows.size.toString())
+                            StatusBarItem(pick("事件", "events"), snapshot.flows.size.toString())
                             StatusBarSeparator()
-                            StatusBarItem("workers", snapshot.workers.size.toString())
+                            StatusBarItem(pick("执行体", "workers"), snapshot.workers.size.toString())
                             StatusBarSeparator()
-                            StatusBarItem("uptime", formatDuration(snapshot.uptimeMs))
+                            StatusBarItem(pick("运行时长", "uptime"), formatDuration(snapshot.uptimeMs))
                             Spacer(Modifier.weight(1f))
                             MonoText(AppVersion, size = 9.5.sp)
                         },
@@ -353,10 +360,10 @@ fun AgentFlowsApp(
 }
 
 private fun desktopTitle(tab: AgentTab): String = when (tab) {
-    AgentTab.Chat -> "Conversation"
-    AgentTab.Flows -> "Event timeline"
-    AgentTab.Usage -> "Usage ledger"
-    AgentTab.Settings -> "Workspace settings"
+    AgentTab.Chat -> pick("对话", "Conversation")
+    AgentTab.Flows -> pick("事件时间线", "Event timeline")
+    AgentTab.Usage -> pick("用量账本", "Usage ledger")
+    AgentTab.Settings -> pick("工作区设置", "Workspace settings")
 }
 
 private fun iconFor(tab: AgentTab): ImageVector = when (tab) {

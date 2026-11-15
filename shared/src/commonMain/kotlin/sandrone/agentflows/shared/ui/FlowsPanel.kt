@@ -56,16 +56,30 @@ import sandrone.agentflows.shared.design.Tone
 import sandrone.agentflows.shared.design.UnderlineTabs
 import sandrone.agentflows.shared.design.isDesktop
 import sandrone.agentflows.shared.design.metrics
+import sandrone.agentflows.shared.i18n.flowLabel
+import sandrone.agentflows.shared.i18n.pick
 import sandrone.agentflows.shared.nowMillis
 
-private val FlowFilters: List<Pair<String, String>> = listOf(
-    "all" to "All",
-    "trigger" to "Trigger",
-    "router_decision" to "Router",
-    "worker_start" to "Worker",
-    "tool_call" to "Tool",
-    "error" to "Alert",
+private fun flowFilters(): List<Pair<String, String>> = listOf(
+    "all" to pick("全部", "All"),
+    "trigger" to pick("触发", "Trigger"),
+    "router_decision" to pick("路由", "Router"),
+    "worker_start" to pick("执行体", "Worker"),
+    "tool_call" to pick("工具", "Tool"),
+    "error" to pick("告警", "Alert"),
 )
+
+private fun flowTypeText(type: String): String = when (type) {
+    "trigger" -> pick("触发", "trigger")
+    "router_decision" -> pick("路由", "router decision")
+    "worker_start" -> pick("执行体启动", "worker start")
+    "worker_done" -> pick("执行体完成", "worker done")
+    "tool_call" -> pick("工具调用", "tool call")
+    "error" -> pick("告警", "error")
+    "watchdog_alert" -> pick("看门狗告警", "watchdog alert")
+    "speculative" -> pick("推测", "speculative")
+    else -> type.replace('_', ' ')
+}
 
 private val TimeColumn = 64.dp
 private val TypeColumn = 132.dp
@@ -80,7 +94,7 @@ private fun countOf(flows: List<AgentFlowEntry>, key: String): Int =
     if (key == "all") flows.size else flows.count { it.type == key }
 
 private fun filterCounts(flows: List<AgentFlowEntry>): Map<String, Int> =
-    FlowFilters.associate { (key, _) -> key to countOf(flows, key) }
+    flowFilters().associate { (key, _) -> key to countOf(flows, key) }
 
 private fun newestFirst(flows: List<AgentFlowEntry>): List<AgentFlowEntry> =
     flows.sortedByDescending { it.timestamp }
@@ -88,8 +102,24 @@ private fun newestFirst(flows: List<AgentFlowEntry>): List<AgentFlowEntry> =
 private fun clockOf(millis: Long): String =
     if (millis <= 0L) "--:--:--" else formatClock(millis) + ":" + ((millis / 1000) % 60).toString().padStart(2, '0')
 
+private fun flowAgeLabel(millis: Long, now: Long): String {
+    val delta = (now - millis).coerceAtLeast(0)
+    if (millis <= 0L) return pick("未知", "unknown")
+    if (delta < 60_000L) return pick("刚刚", "just now")
+    if (delta < 3_600_000L) {
+        val minutes = delta / 60_000L
+        return pick("$minutes 分钟前", "${minutes}m ago")
+    }
+    if (delta < MILLIS_PER_DAY) {
+        val hours = delta / 3_600_000L
+        return pick("$hours 小时前", "${hours}h ago")
+    }
+    val days = delta / MILLIS_PER_DAY
+    return pick("$days 天前", "${days}d ago")
+}
+
 private fun filterLabel(key: String): String =
-    FlowFilters.firstOrNull { it.first == key }?.second ?: "matching"
+    flowFilters().firstOrNull { it.first == key }?.second ?: pick("匹配", "matching")
 
 private fun flowTone(type: String): Tone = when (flowToneOf(type)) {
     FlowTone.TRIGGER -> Tone.WARNING
@@ -155,8 +185,9 @@ private fun DesktopFlowsPanel(
     onFilter: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val keys = FlowFilters.map { it.first }
-    val labels = FlowFilters.map { it.second }
+    val filters = flowFilters()
+    val keys = filters.map { it.first }
+    val labels = filters.map { it.second }
     val selected = keys.indexOf(filter).coerceAtLeast(0)
     val newestStamp = flows.maxOfOrNull { it.timestamp } ?: 0L
     val live = newestStamp > 0L && now - newestStamp < LiveWindowMillis
@@ -187,14 +218,15 @@ private fun DesktopFlowsPanel(
                 if (flows.isEmpty()) {
                     EmptyHint(
                         AgentIcons.Bolt,
-                        "No flow events yet",
-                        "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen.",
+                        pick("暂无事件", "No flow events yet"),
+                        pick("触发、路由决策、执行体启动、工具调用与告警会在发生时实时出现在这里。", "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen."),
                     )
                 } else {
+                    val filterName = filterLabel(filter)
                     EmptyHint(
                         AgentIcons.Filter,
-                        "No ${filterLabel(filter)} events",
-                        "Nothing matches this filter. Pick All to see the full session timeline.",
+                        pick("暂无${filterName}事件", "No ${filterName} events"),
+                        pick("没有符合此筛选的事件。选择「全部」即可查看完整的会话时间线。", "Nothing matches this filter. Pick All to see the full session timeline."),
                     )
                 }
             }
@@ -214,11 +246,11 @@ private fun ColumnHeader() {
         Modifier.fillMaxWidth().padding(vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SectionLabel("Time", Modifier.width(TimeColumn))
-        SectionLabel("Type", Modifier.width(TypeColumn))
-        SectionLabel("Event", Modifier.weight(1f))
+        SectionLabel(pick("时间", "Time"), Modifier.width(TimeColumn))
+        SectionLabel(pick("类型", "Type"), Modifier.width(TypeColumn))
+        SectionLabel(pick("事件", "Event"), Modifier.weight(1f))
         Box(Modifier.width(AgeColumn), contentAlignment = Alignment.CenterEnd) {
-            SectionLabel("Age")
+            SectionLabel(pick("距今", "Age"))
         }
         Spacer(Modifier.width(ChevronColumn))
     }
@@ -247,11 +279,11 @@ private fun DesktopFlowRow(entry: AgentFlowEntry, now: Long) {
                             .background(flowAccent(entry.type)),
                     )
                     Spacer(Modifier.width(Space.xs + Space.xxs))
-                    MetaChip(flowLabel(entry.type), tone = Tone.MUTED)
+                    MetaChip(flowTypeText(entry.type), tone = Tone.MUTED)
                 }
             }
             Text(
-                entry.label,
+                flowLabel(entry.label),
                 Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -259,7 +291,7 @@ private fun DesktopFlowRow(entry: AgentFlowEntry, now: Long) {
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
             )
             NumberCell(
-                formatRelative(entry.timestamp, now),
+                flowAgeLabel(entry.timestamp, now),
                 width = AgeColumn,
                 color = scheme.onSurfaceVariant,
             )
@@ -278,13 +310,14 @@ private fun DesktopFlowRow(entry: AgentFlowEntry, now: Long) {
                     .padding(start = TimeColumn + TypeColumn, end = Space.lg, top = Space.xxs, bottom = Space.sm),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("Payload")
+                    SectionLabel(pick("载荷", "Payload"))
                     Spacer(Modifier.weight(1f))
-                    MonoText(entry.type + " · " + entry.details.lines().size + "L", size = 10.sp)
+                    val lineCount = entry.details.lines().size
+                    MonoText(entry.type + " · " + pick("$lineCount 行", "${lineCount}L"), size = 10.sp)
                 }
                 Spacer(Modifier.height(Space.xs))
                 if (entry.details.isBlank()) {
-                    CaptionText("No payload recorded for this event.", maxLines = 1, size = 11.sp)
+                    CaptionText(pick("此事件没有记录载荷。", "No payload recorded for this event."), maxLines = 1, size = 11.sp)
                 } else {
                     CodeSurface(entry.details)
                 }
@@ -308,7 +341,7 @@ private fun MobileFlowsPanel(
     Column(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = Space.md)) {
             ChipFilterRow(
-                options = FlowFilters,
+                options = flowFilters(),
                 selected = filter,
                 onSelect = onFilter,
                 counts = counts,
@@ -324,14 +357,15 @@ private fun MobileFlowsPanel(
                 if (flows.isEmpty()) {
                     EmptyHint(
                         AgentIcons.Bolt,
-                        "No flow events yet",
-                        "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen.",
+                        pick("暂无事件", "No flow events yet"),
+                        pick("触发、路由决策、执行体启动、工具调用与告警会在发生时实时出现在这里。", "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen."),
                     )
                 } else {
+                    val filterName = filterLabel(filter)
                     EmptyHint(
                         AgentIcons.Filter,
-                        "No ${filterLabel(filter)} events",
-                        "Nothing matches this filter. Pick All to see the full session timeline.",
+                        pick("暂无${filterName}事件", "No ${filterName} events"),
+                        pick("没有符合此筛选的事件。选择「全部」即可查看完整的会话时间线。", "Nothing matches this filter. Pick All to see the full session timeline."),
                     )
                 }
             }
@@ -377,9 +411,9 @@ private fun MobileFlowCard(entry: AgentFlowEntry, now: Long) {
         ) {
             Column(Modifier.padding(horizontal = Space.md + Space.xxs, vertical = Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    MetaChip(flowLabel(entry.type), tone = flowTone(entry.type))
+                    MetaChip(flowTypeText(entry.type), tone = flowTone(entry.type))
                     Spacer(Modifier.width(Space.sm))
-                    MonoText(formatRelative(entry.timestamp, now), size = 10.sp)
+                    MonoText(flowAgeLabel(entry.timestamp, now), size = 10.sp)
                     Spacer(Modifier.weight(1f))
                     Icon(
                         if (expanded) AgentIcons.ChevronUp else AgentIcons.ChevronDown,
@@ -389,7 +423,7 @@ private fun MobileFlowCard(entry: AgentFlowEntry, now: Long) {
                     )
                 }
                 Text(
-                    entry.label,
+                    flowLabel(entry.label),
                     Modifier.padding(top = Space.sm),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -405,7 +439,7 @@ private fun MobileFlowCard(entry: AgentFlowEntry, now: Long) {
                         }
                         Spacer(Modifier.height(Space.xs))
                         if (entry.details.isBlank()) {
-                            CaptionText("No payload recorded for this event.", maxLines = 1, size = 11.sp)
+                            CaptionText(pick("此事件没有记录载荷。", "No payload recorded for this event."), maxLines = 1, size = 11.sp)
                         } else {
                             CodeSurface(entry.details)
                         }
@@ -428,10 +462,10 @@ fun FlowSummaryStrip(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier)
             horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            InlineStat("Triggers", triggers.toString())
-            InlineStat("Workers", workers.toString())
-            InlineStat("Tool calls", tools.toString())
-            InlineStat("Alerts", alerts.toString(), accent = MaterialTheme.colorScheme.error)
+            InlineStat(pick("触发", "Triggers"), triggers.toString())
+            InlineStat(pick("执行体", "Workers"), workers.toString())
+            InlineStat(pick("工具调用", "Tool calls"), tools.toString())
+            InlineStat(pick("告警", "Alerts"), alerts.toString(), accent = MaterialTheme.colorScheme.error)
         }
     } else {
         Surface(
@@ -443,14 +477,14 @@ fun FlowSummaryStrip(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier)
                 Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatBlock("Triggers", triggers.toString(), Modifier.weight(1f))
+                StatBlock(pick("触发", "Triggers"), triggers.toString(), Modifier.weight(1f))
                 SummaryDivider()
-                StatBlock("Workers", workers.toString(), Modifier.weight(1f))
+                StatBlock(pick("执行体", "Workers"), workers.toString(), Modifier.weight(1f))
                 SummaryDivider()
-                StatBlock("Tool calls", tools.toString(), Modifier.weight(1f))
+                StatBlock(pick("工具调用", "Tool calls"), tools.toString(), Modifier.weight(1f))
                 SummaryDivider()
                 StatBlock(
-                    "Alerts",
+                    pick("告警", "Alerts"),
                     alerts.toString(),
                     Modifier.weight(1f),
                     accent = MaterialTheme.colorScheme.error,
@@ -499,7 +533,7 @@ private fun LiveBadge(live: Boolean) {
             )
         }
         Spacer(Modifier.width(Space.xs))
-        MonoText(if (live) "live" else "idle", size = 10.sp)
+        MonoText(if (live) pick("实时", "live") else pick("空闲", "idle"), size = 10.sp)
     }
 }
 
@@ -509,7 +543,7 @@ fun RecentFlowPreview(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier
     val latest = remember(flows) { newestFirst(flows).firstOrNull() }
     if (latest == null) {
         CaptionText(
-            "No flow events recorded in this session.",
+            pick("此会话暂无事件记录。", "No flow events recorded in this session."),
             modifier,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -518,10 +552,10 @@ fun RecentFlowPreview(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier
         return
     }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        MetaChip(flowLabel(latest.type), tone = flowTone(latest.type), mono = desktop)
+        MetaChip(flowTypeText(latest.type), tone = flowTone(latest.type), mono = desktop)
         Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
         Text(
-            latest.label,
+            flowLabel(latest.label),
             Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -529,6 +563,6 @@ fun RecentFlowPreview(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier
             style = MaterialTheme.typography.bodySmall.copy(fontSize = if (desktop) 11.5.sp else 13.sp),
         )
         Spacer(Modifier.width(Space.sm))
-        MonoText(formatRelative(latest.timestamp, nowMillis()), size = if (desktop) 10.sp else 11.sp)
+        MonoText(flowAgeLabel(latest.timestamp, nowMillis()), size = if (desktop) 10.sp else 11.sp)
     }
 }

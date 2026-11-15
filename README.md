@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" width="112" alt="AgentFlows logo">
+  <img src="docs/logo.png" width="112" alt="AgentFlows logo">
 </p>
 
 # AgentFlows

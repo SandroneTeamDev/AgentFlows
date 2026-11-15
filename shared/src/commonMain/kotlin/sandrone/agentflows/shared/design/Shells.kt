@@ -151,7 +151,7 @@ private fun BrandRow() {
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, top = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BrandTile(size = 22.dp, cornerRatio = 0.3f, markRatio = 0.76f)
+        BrandTile(size = 22.dp, cornerRatio = 0.28f)
         Spacer(Modifier.width(8.dp))
         Text(
             "AgentFlows",

@@ -5,6 +5,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "sandrone.agentflows.shared.generated.resources"
+}
+
 kotlin {
     jvmToolchain(17)
     jvm("desktop")
@@ -29,6 +34,7 @@ kotlin {
             implementation("dev.chrisbanes.haze:haze-blur-material3:2.1.0")
             implementation("dev.chrisbanes.haze:haze-glass:2.1.0")
             implementation("dev.chrisbanes.haze:haze-glass-material3:2.1.0")
+            implementation(compose.components.resources)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

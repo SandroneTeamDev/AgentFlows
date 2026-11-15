@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import sandrone.agentflows.shared.i18n.pick
 import sandrone.agentflows.shared.ui.AgentIcons
+import sandrone.agentflows.shared.ui.BrandTile
 
 data class ShellNavItem(
     val label: String,
@@ -149,16 +150,7 @@ private fun BrandRow() {
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, top = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            shape = RoundedCornerShape(Radius.xs),
-            modifier = Modifier.size(22.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(AgentIcons.Wave, null, Modifier.size(13.dp))
-            }
-        }
+        BrandTile(size = 22.dp, cornerRatio = 0.3f, markRatio = 0.76f)
         Spacer(Modifier.width(8.dp))
         Text(
             "AgentFlows",

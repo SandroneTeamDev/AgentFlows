@@ -2,6 +2,7 @@ package sandrone.agentflows.desktop
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -14,6 +15,7 @@ fun main() = application {
     val client = remember { createEngineClient() }
     Window(
         title = "AgentFlows",
+        icon = painterResource("agentflows-icon.png"),
         onCloseRequest = {
             client.close()
             exitApplication()

@@ -57,6 +57,7 @@ import sandrone.agentflows.shared.i18n.engineMessage
 import sandrone.agentflows.shared.i18n.pick
 import sandrone.agentflows.shared.i18n.statusLabel
 import sandrone.agentflows.shared.ui.AgentIcons
+import sandrone.agentflows.shared.ui.BrandTile
 import sandrone.agentflows.shared.ui.AgentTab
 import sandrone.agentflows.shared.ui.ChatMessage
 import sandrone.agentflows.shared.ui.ChatPanel
@@ -345,7 +346,7 @@ fun AgentFlowsApp(
                         onNavSelect = { tab = AgentTab.entries[it] },
                         title = "AgentFlows",
                         subtitle = snapshot.message,
-                        leading = { AvatarTile(AgentIcons.Wave, size = 40.dp) },
+                        leading = { BrandTile(size = 40.dp) },
                         actions = {
                             GhostIconButton(AgentIcons.Refresh, onClick = { refresh() })
                             GhostIconButton(AgentIcons.Settings, onClick = { tab = AgentTab.Settings })

@@ -54,6 +54,7 @@ import sandrone.agentflows.shared.EffectPrefs
 import sandrone.agentflows.shared.MotionTokens
 import sandrone.agentflows.shared.WorkspaceSnapshot
 import sandrone.agentflows.shared.design.AvatarTile
+import sandrone.agentflows.shared.ui.BrandTile
 import sandrone.agentflows.shared.design.BusyIndicator
 import sandrone.agentflows.shared.design.CaptionText
 import sandrone.agentflows.shared.design.CodeSurface
@@ -134,7 +135,7 @@ private fun MobileIntro(snapshot: WorkspaceSnapshot, onInput: (String) -> Unit) 
         Modifier.fillMaxWidth().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AvatarTile(AgentIcons.Wave, size = 64.dp, shape = RoundedCornerShape(Radius.xl))
+        BrandTile(size = 64.dp, cornerRatio = 0.34f)
         Text(
             "AgentFlows",
             Modifier.padding(top = 16.dp),
@@ -166,7 +167,7 @@ private fun MobileIntro(snapshot: WorkspaceSnapshot, onInput: (String) -> Unit) 
 private fun DesktopIntro(snapshot: WorkspaceSnapshot, onInput: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).widthIn(max = 560.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AvatarTile(AgentIcons.Wave, size = 34.dp)
+            BrandTile(size = 34.dp, cornerRatio = 0.32f)
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" width="112" alt="AgentFlows logo">
+</p>
+
 # AgentFlows
 
 **v0.0.1-rc1-alpha3 · Alpha development preview**

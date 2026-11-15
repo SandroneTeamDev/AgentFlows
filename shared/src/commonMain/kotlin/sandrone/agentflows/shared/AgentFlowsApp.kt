@@ -67,7 +67,7 @@ import sandrone.agentflows.shared.ui.SettingsPanel
 import sandrone.agentflows.shared.ui.UsagePanel
 import sandrone.agentflows.shared.ui.formatDuration
 
-private val AppVersion = "v0.0.1-rc1-alpha3"
+private val AppVersion = AppInfo.Version
 
 @Composable
 fun AgentFlowsApp(

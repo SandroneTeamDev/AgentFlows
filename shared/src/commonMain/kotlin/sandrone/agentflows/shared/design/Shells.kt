@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import sandrone.agentflows.shared.AppInfo
 import sandrone.agentflows.shared.i18n.pick
 import sandrone.agentflows.shared.ui.AgentIcons
 import sandrone.agentflows.shared.ui.BrandTile
@@ -164,7 +165,7 @@ private fun BrandRow() {
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f), RoundedCornerShape(Radius.xs))
                 .padding(horizontal = 5.dp, vertical = 1.dp),
         ) {
-            MonoText("alpha3", size = 9.sp)
+            MonoText(AppInfo.Channel, size = 9.sp)
         }
     }
 }

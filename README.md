@@ -1,6 +1,6 @@
 # AgentFlows
 
-**v0.0.1-rc1-alpha2 · Alpha development preview**
+**v0.0.1-rc1-alpha3 · Alpha development preview**
 
 A local-first, continuously running personal Super-agent built around an event-flow timeline rather than a DAG editor. One conversational Router coordinates context-isolated Workers while the interface stays fully responsive.
 

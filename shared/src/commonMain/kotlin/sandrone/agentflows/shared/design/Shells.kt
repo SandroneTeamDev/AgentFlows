@@ -171,7 +171,7 @@ private fun BrandRow() {
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f), RoundedCornerShape(Radius.xs))
                 .padding(horizontal = 5.dp, vertical = 1.dp),
         ) {
-            MonoText("alpha2", size = 9.sp)
+            MonoText("alpha3", size = 9.sp)
         }
     }
 }

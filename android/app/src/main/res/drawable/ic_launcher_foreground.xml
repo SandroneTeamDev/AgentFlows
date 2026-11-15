@@ -10,18 +10,18 @@
         android:scaleX="0.66"
         android:scaleY="0.66">
         <path
-            android:pathData="M 36.5 7 C 31 26 25 48 22.2 66 C 19.6 81 31 89.6 47.5 89.6 C 64 89.6 74.6 82 74 66 C 73.4 50 68 26 62.5 6.5 L 50.5 45.5 L 36.5 7 Z"
+            android:pathData="M 36.4 7.2 C 31.5 25 26 47 21.8 66.5 C 19.5 80.5 31 89.2 47.3 89.2 C 64 89.2 74.5 83 75.8 70 C 76.6 60 70 28 62.3 5.7 L 50.5 46.1 L 36.4 7.2 Z"
             android:strokeColor="#F9DB09"
             android:strokeWidth="6.5"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />
         <path
-            android:pathData="M 38 46.5 L 38 64.5"
+            android:pathData="M 37.9 50.2 L 37.9 62.7"
             android:strokeColor="#F9DB09"
             android:strokeWidth="6.5"
             android:strokeLineCap="round" />
         <path
-            android:pathData="M 69 49 L 57 55 L 68.5 61.5"
+            android:pathData="M 67.4 51.4 L 58.4 54.8 L 67.4 60.4"
             android:strokeColor="#F9DB09"
             android:strokeWidth="6.5"
             android:strokeLineCap="round"

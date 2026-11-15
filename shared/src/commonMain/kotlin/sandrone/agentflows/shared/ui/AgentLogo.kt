@@ -21,60 +21,54 @@ object AgentBrand {
     val Navy = Color(0xFF020852)
     val Yellow = Color(0xFFF9DB09)
     const val Silhouette =
-        "M 36.5 7 C 31 26 25 48 22.2 66 C 19.6 81 31 89.6 47.5 89.6 C 64 89.6 74.6 82 74 66 C 73.4 50 68 26 62.5 6.5 L 50.5 45.5 L 36.5 7 Z"
-    const val Eye = "M 38 46.5 L 38 64.5"
-    const val Chevron = "M 69 49 L 57 55 L 68.5 61.5"
-    const val StrokeWidth = 6.5f
+        "M 36.4 7.2 C 31.5 25 26 47 21.8 66.5 C 19.5 80.5 31 89.2 47.3 89.2 C 64 89.2 74.5 83 75.8 70 C 76.6 60 70 28 62.3 5.7 L 50.5 46.1 L 36.4 7.2 Z"
+    const val Eye = "M 37.9 50.2 L 37.9 62.7"
+    const val Chevron = "M 67.4 51.4 L 58.4 54.8 L 67.4 60.4"
+    const val ThinStroke = 2.2f
+    const val MediumStroke = 4.4f
+    const val BoldStroke = 6.5f
+    const val GlyphStroke = 7.6f
 }
 
-val AgentLogoGlyph: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "AgentLogoGlyph",
+private fun buildMark(name: String, strokeWidth: Float, withDetail: Boolean): ImageVector {
+    val builder = ImageVector.Builder(
+        name = name,
         defaultWidth = 100.dp,
         defaultHeight = 100.dp,
         viewportWidth = 100f,
         viewportHeight = 100f,
+    ).addPath(
+        pathData = PathParser().parsePathString(AgentBrand.Silhouette).toNodes(),
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = strokeWidth,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
     )
-        .addPath(
-            pathData = PathParser().parsePathString(AgentBrand.Silhouette).toNodes(),
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = AgentBrand.StrokeWidth,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        )
-        .build()
-}
-
-val AgentLogoMark: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "AgentLogoMark",
-        defaultWidth = 100.dp,
-        defaultHeight = 100.dp,
-        viewportWidth = 100f,
-        viewportHeight = 100f,
-    )
-        .addPath(
-            pathData = PathParser().parsePathString(AgentBrand.Silhouette).toNodes(),
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = AgentBrand.StrokeWidth,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round,
-        )
-        .addPath(
+    if (withDetail) {
+        builder.addPath(
             pathData = PathParser().parsePathString(AgentBrand.Eye).toNodes(),
             stroke = SolidColor(Color.Black),
-            strokeLineWidth = AgentBrand.StrokeWidth,
+            strokeLineWidth = strokeWidth,
             strokeLineCap = StrokeCap.Round,
         )
-        .addPath(
+        builder.addPath(
             pathData = PathParser().parsePathString(AgentBrand.Chevron).toNodes(),
             stroke = SolidColor(Color.Black),
-            strokeLineWidth = AgentBrand.StrokeWidth,
+            strokeLineWidth = strokeWidth,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round,
         )
-        .build()
+    }
+    return builder.build()
 }
+
+val AgentLogoThin: ImageVector by lazy { buildMark("AgentLogoThin", AgentBrand.ThinStroke, true) }
+
+val AgentLogoMedium: ImageVector by lazy { buildMark("AgentLogoMedium", AgentBrand.MediumStroke, true) }
+
+val AgentLogoMark: ImageVector by lazy { buildMark("AgentLogoMark", AgentBrand.BoldStroke, true) }
+
+val AgentLogoGlyph: ImageVector by lazy { buildMark("AgentLogoGlyph", AgentBrand.GlyphStroke, false) }
 
 @Composable
 fun BrandTile(
@@ -83,7 +77,14 @@ fun BrandTile(
     markRatio: Float = 0.72f,
     cornerRatio: Float = 0.3f,
 ) {
-    val detailed = size >= 26.dp
+    val glyphOnly = size < 26.dp
+    val mark = when {
+        glyphOnly -> AgentLogoGlyph
+        size < 48.dp -> AgentLogoMark
+        size < 96.dp -> AgentLogoMedium
+        else -> AgentLogoThin
+    }
+    val ratio = if (glyphOnly) markRatio + 0.04f else markRatio
     Surface(
         modifier.size(size),
         shape = RoundedCornerShape(size * cornerRatio),
@@ -91,9 +92,9 @@ fun BrandTile(
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = if (detailed) AgentLogoMark else AgentLogoGlyph,
+                imageVector = mark,
                 contentDescription = null,
-                modifier = Modifier.size(size * if (detailed) markRatio else markRatio + 0.04f),
+                modifier = Modifier.size(size * ratio),
                 tint = AgentBrand.Yellow,
             )
         }

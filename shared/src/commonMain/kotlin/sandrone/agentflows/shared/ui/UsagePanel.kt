@@ -44,6 +44,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
@@ -62,7 +63,6 @@ import sandrone.agentflows.shared.UsageSummary
 import sandrone.agentflows.shared.UsageTokens
 import sandrone.agentflows.shared.UsageToolBucket
 import sandrone.agentflows.shared.design.AvatarTile
-import sandrone.agentflows.shared.design.BarStrip
 import sandrone.agentflows.shared.design.BusyIndicator
 import sandrone.agentflows.shared.design.CaptionText
 import sandrone.agentflows.shared.design.Donut
@@ -80,7 +80,6 @@ import sandrone.agentflows.shared.design.PanelHeader
 import sandrone.agentflows.shared.design.PulsingDot
 import sandrone.agentflows.shared.design.Radius
 import sandrone.agentflows.shared.design.SectionLabel
-import sandrone.agentflows.shared.design.StatBlock
 import sandrone.agentflows.shared.design.ThinRule
 import sandrone.agentflows.shared.design.Tone
 import sandrone.agentflows.shared.design.isDesktop
@@ -100,6 +99,9 @@ private val WidthProvider = 76.dp
 private val WidthRole = 58.dp
 private val WidthLast = 58.dp
 private val WidthTools = 40.dp
+private val WidthSuccess = 58.dp
+private val WidthCache = 54.dp
+private val WidthShare = 80.dp
 
 @Composable
 fun UsagePanel(
@@ -438,6 +440,7 @@ private fun MobileUsage(
             if (hasData) {
                 item { MobileMetricTiles(summary) }
                 item { MobileTrendCard(summary, range, granularity) }
+                item { MobileContextCard(summary) }
                 item { MobileCompositionCard(summary.composition) }
                 item { MobileCostCard(summary.costBreakdown, summary.totals, summary.priced) }
                 item { MobileRoleCard(summary.byRole, summary.totals.tokens) }
@@ -465,38 +468,85 @@ private fun MobileUsage(
 @Composable
 private fun DesktopKpiStrip(summary: UsageSummary) {
     val scheme = MaterialTheme.colorScheme
-    val totals = summary.totals
+    val stats = usageMetrics(summary)
     PanelCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            StatBlock(
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            KpiBlock(
                 pick("Token", "Tokens"),
-                formatCount(totals.tokens),
+                formatCount(stats.tokens),
                 Modifier.weight(1f),
-                caption = pick(
-                    formatCount(totals.tokensIn) + " 输入 / " + formatCount(totals.tokensOut) + " 输出",
-                    formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                pick(
+                    formatCount(stats.tokensIn) + " 入 / " + formatCount(stats.tokensOut) + " 出",
+                    formatCount(stats.tokensIn) + " in / " + formatCount(stats.tokensOut) + " out",
                 ),
             )
-            VerticalRule(28.dp, inset = 10.dp)
-            StatBlock(
+            KpiBlock(
                 pick("费用", "Cost"),
-                formatCost(totals.actualCost),
+                formatCost(stats.actualCost),
                 Modifier.weight(1f),
-                caption = if (summary.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
-                accent = if (summary.priced) null else scheme.tertiary,
+                if (stats.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
+                accent = if (stats.priced) null else scheme.tertiary,
             )
-            VerticalRule(28.dp, inset = 10.dp)
-            StatBlock(pick("调用", "Calls"), totals.requests.toString(), Modifier.weight(1f), caption = pick("模型调用", "model calls"))
-            VerticalRule(28.dp, inset = 10.dp)
-            StatBlock(pick("会话", "Sessions"), summary.bySession.size.toString(), Modifier.weight(1f), caption = pick("有活动", "with activity"))
-            VerticalRule(28.dp, inset = 10.dp)
-            StatBlock(
-                pick("失败", "Failures"),
-                totals.failures.toString(),
+            KpiBlock(pick("调用", "Calls"), stats.requests.toString(), Modifier.weight(1f), pick("模型调用", "model calls"))
+            KpiBlock(pick("会话", "Sessions"), stats.sessions.toString(), Modifier.weight(1f), pick("有活动", "with activity"))
+            KpiBlock(
+                pick("缓存命中率", "Cache hit rate"),
+                formatPercent1(stats.cacheRate),
                 Modifier.weight(1f),
-                caption = if (totals.failures == 0) pick("无记录", "none recorded") else pick("见明细", "see breakdown"),
-                accent = if (totals.failures > 0) scheme.error else null,
+                pick(
+                    formatCount(stats.cacheHits) + " 复用 / " + formatCount(stats.tokensIn) + " 输入",
+                    formatCount(stats.cacheHits) + " reused / " + formatCount(stats.tokensIn) + " in",
+                ),
+                accent = scheme.primary,
             )
+            KpiBlock(
+                pick("成功率", "Success rate"),
+                formatPercent1(stats.successRate),
+                Modifier.weight(1f),
+                if (stats.failures == 0) pick("无失败", "no failures") else pick(stats.failures.toString() + " 次失败", countOf(stats.failures, "failure", "failures")),
+                accent = if (stats.failures > 0) scheme.error else null,
+            )
+            KpiBlock(
+                pick("平均延迟", "Avg latency"),
+                if (stats.hasLatency) formatLatency(stats.latencyMs) else "—",
+                Modifier.weight(1f),
+                pick("按调用加权", "call weighted"),
+            )
+            KpiBlock(
+                pick("单次 Token", "Tokens per call"),
+                formatCount(stats.perCall),
+                Modifier.weight(1f),
+                pick("每次调用", "per call"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun KpiBlock(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+    accent: Color? = null,
+    valueSize: TextUnit = 19.sp,
+    captionSize: TextUnit = 10.5.sp,
+) {
+    Column(modifier) {
+        SectionLabel(label)
+        MonoText(
+            value,
+            Modifier.padding(top = 3.dp),
+            color = accent ?: MaterialTheme.colorScheme.onSurface,
+            size = valueSize,
+            weight = FontWeight.SemiBold,
+        )
+        if (caption != null) {
+            CaptionText(caption, Modifier.padding(top = 2.dp), maxLines = 1, size = captionSize)
         }
     }
 }
@@ -506,11 +556,13 @@ private fun DesktopBody(summary: UsageSummary, tools: List<UsageToolBucket>, gra
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(0.6f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             DesktopTrendCard(summary, granularity)
+            DesktopSessionRankCard(summary.bySession, summary.totals.actualCost)
             DesktopModelTable(summary.byModel, summary.totals.tokens)
             DesktopRoleTable(summary.byRole, summary.totals.tokens)
             DesktopActivityCard(summary.heatmap)
         }
         Column(Modifier.weight(0.4f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DesktopContextCard(summary)
             DesktopCompositionCard(summary.composition)
             DesktopCostCard(summary.costBreakdown, summary.totals, summary.priced)
             if (tools.isNotEmpty()) {
@@ -525,33 +577,235 @@ private fun DesktopBody(summary: UsageSummary, tools: List<UsageToolBucket>, gra
 
 @Composable
 private fun DesktopTrendCard(summary: UsageSummary, granularity: UsageGranularity) {
-    val points = summary.byPoint
-    val peak = points.maxOfOrNull { it.tokens } ?: 0L
-    val showLabels = points.size <= 24
+    val bars = trendBars(summary)
+    val total = bars.sumOf { it.total }
+    val peak = bars.maxOfOrNull { it.total } ?: 0L
+    val average = if (bars.isEmpty()) 0L else total / bars.size
     PanelCard {
         PanelHeader(
             title = pick("趋势", "Trend"),
-            subtitle = trendSubtitle(points.size, granularity),
+            subtitle = trendSubtitle(bars.size, granularity),
             icon = AgentIcons.Chart,
-            trailing = { MonoText(pick("Token", "tokens")) },
+            trailing = { TrendLegend(10.sp) },
         )
         Spacer(Modifier.height(10.dp))
-        if (points.isEmpty()) {
+        if (bars.isEmpty()) {
             CaptionText(pick("该范围内没有记录。", "Nothing recorded in this range."), size = 11.sp)
         } else {
-            BarStrip(
-                values = points.map { it.tokens.toFloat() },
-                labels = points.map { it.key.takeLast(5) },
-                height = 72.dp,
-                showLabels = showLabels,
-            )
+            StackedBarStrip(bars, height = 76.dp, showLabels = bars.size <= 24)
         }
         Spacer(Modifier.height(8.dp))
         ThinRule(alpha = 0.3f)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            MonoText(pick("峰值 ", "peak ") + formatCount(peak))
+            MonoText(pick("峰值 ", "peak ") + formatCount(peak) + pick(" / 均值 ", " / avg ") + formatCount(average))
             Spacer(Modifier.weight(1f))
             MonoText(pick("范围 " + rangeWireText(summary.range) + " / " + granularityWireText(summary.granularity), "range " + summary.range + " / " + summary.granularity))
+        }
+    }
+}
+
+@Composable
+private fun StackedBarStrip(bars: List<TrendBar>, height: Dp, showLabels: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val peak = bars.maxOfOrNull { it.total }?.takeIf { it > 0L } ?: 1L
+    val labelEvery = if (bars.size <= 8) 1 else (bars.size + 7) / 8
+    Row(
+        Modifier.fillMaxWidth().height(height + if (showLabels) 16.dp else 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isDesktop()) 3.dp else 5.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        bars.forEachIndexed { index, bar ->
+            val stack = bar.input + bar.output + bar.cacheRead
+            val fraction = (bar.total.toFloat() / peak.toFloat()).coerceIn(0f, 1f)
+            val barHeight = if (bar.total > 0L) (height * fraction).coerceAtLeast(2.dp) else 1.dp
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().height(barHeight).clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)),
+                    verticalArrangement = Arrangement.Bottom,
+                ) {
+                    if (bar.total > 0L && stack <= 0L) {
+                        Box(Modifier.fillMaxWidth().height(barHeight).background(scheme.primary.copy(alpha = 0.85f)))
+                    } else if (bar.total > 0L) {
+                        val cacheHeight = barHeight * (bar.cacheRead.toFloat() / stack.toFloat())
+                        val outputHeight = barHeight * (bar.output.toFloat() / stack.toFloat())
+                        val inputHeight = barHeight * (bar.input.toFloat() / stack.toFloat())
+                        if (bar.cacheRead > 0L) {
+                            Box(Modifier.fillMaxWidth().height(cacheHeight).background(scheme.secondary.copy(alpha = 0.7f)))
+                        }
+                        if (bar.output > 0L) {
+                            Box(Modifier.fillMaxWidth().height(outputHeight).background(scheme.tertiary.copy(alpha = 0.85f)))
+                        }
+                        if (bar.input > 0L) {
+                            Box(Modifier.fillMaxWidth().height(inputHeight).background(scheme.primary.copy(alpha = 0.85f)))
+                        }
+                    } else {
+                        Box(Modifier.fillMaxWidth().height(2.dp).background(scheme.outlineVariant.copy(alpha = 0.3f)))
+                    }
+                }
+                if (showLabels) {
+                    MonoText(
+                        if (index % labelEvery == 0) bar.label else "",
+                        Modifier.padding(top = 3.dp),
+                        size = if (isDesktop()) 8.5.sp else 9.5.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendLegend(size: TextUnit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LegendDot(scheme.primary.copy(alpha = 0.85f), pick("输入", "Input"), size)
+        LegendDot(scheme.tertiary.copy(alpha = 0.85f), pick("输出", "Output"), size)
+        LegendDot(scheme.secondary.copy(alpha = 0.7f), pick("缓存读", "Cache read"), size)
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String, size: TextUnit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(RoundedCornerShape(2.dp)).background(color))
+        Spacer(Modifier.width(4.dp))
+        MonoText(label, size = size)
+    }
+}
+
+@Composable
+private fun DesktopContextCard(summary: UsageSummary) {
+    val scheme = MaterialTheme.colorScheme
+    val stats = usageMetrics(summary)
+    val reuse = if (stats.tokens > 0L) stats.cacheHits.toDouble() / stats.tokens.toDouble() else 0.0
+    val top = topCacheSessions(summary.bySession, 3)
+    val cacheBase = summary.bySession.sumOf { it.cacheHits }.coerceAtLeast(1L)
+    PanelCard {
+        PanelHeader(
+            title = pick("上下文洞察", "Context insight"),
+            subtitle = pick("命中率、延迟与复用", "hit rate, latency and reuse"),
+            icon = AgentIcons.Wave,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+                Donut(
+                    slices = listOf(
+                        pick("命中", "hit") to (stats.cacheRate * 100.0).toFloat(),
+                        pick("未命中", "miss") to ((1.0 - stats.cacheRate) * 100.0).toFloat(),
+                    ),
+                    colors = listOf(scheme.primary, scheme.outlineVariant.copy(alpha = 0.45f)),
+                    size = 84.dp,
+                    strokeRatio = 0.2f,
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    MonoText(
+                        formatPercent1(stats.cacheRate),
+                        color = scheme.onSurface,
+                        size = 14.sp,
+                        weight = FontWeight.SemiBold,
+                    )
+                    CaptionText(pick("命中率", "hit rate"), size = 9.sp, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                KVRow(pick("单次平均 Token", "Tokens per call"), if (stats.requests > 0) formatCount(stats.perCall) else "—")
+                KVRow(pick("平均延迟", "Avg latency"), if (stats.hasLatency) formatLatency(stats.latencyMs) else "—")
+                KVRow(pick("上下文复用", "Context reuse"), formatPercent1(reuse))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        ThinRule(alpha = 0.4f)
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(pick("复用最高会话", "Top reuse sessions"))
+            Spacer(Modifier.weight(1f))
+            SectionLabel(pick("命中 Token", "cached tokens"))
+        }
+        Spacer(Modifier.height(4.dp))
+        if (top.isEmpty()) {
+            CaptionText(pick("该范围内没有会话记录。", "No sessions recorded in this range."), Modifier.padding(vertical = 4.dp), size = 10.5.sp)
+        } else {
+            top.forEachIndexed { index, entry ->
+                if (index > 0) {
+                    ThinRule(alpha = 0.25f)
+                }
+                Row(Modifier.fillMaxWidth().heightIn(min = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MonoText(
+                        entry.sessionId.take(14).ifBlank { pick("未分配", "unassigned") },
+                        Modifier.weight(1f),
+                        size = 10.sp,
+                        color = scheme.onSurface,
+                    )
+                    NumberCell(formatCount(entry.hits), width = WidthTokens)
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.width(64.dp)) {
+                        Meter(entry.hits.toFloat() / cacheBase.toFloat(), height = 3.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopSessionRankCard(sessions: List<UsageSessionBucket>, totalCost: Double) {
+    val scheme = MaterialTheme.colorScheme
+    val ranked = sessions.sortedByDescending { it.actualCost }.take(5)
+    val costBase = totalCost.coerceAtLeast(0.01)
+    PanelCard {
+        PanelHeader(
+            title = pick("会话排行 · 按费用", "Session ranking by cost"),
+            subtitle = pick("费用最高的 5 个会话", "top 5 sessions by cost"),
+            icon = AgentIcons.Users,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(pick("会话", "Session"), Modifier.weight(1f))
+            HeaderCell(pick("角色", "Role"), WidthRole)
+            HeaderCell(pick("调用", "Calls"), WidthCalls)
+            HeaderCell(pick("Token", "Tokens"), WidthTokens)
+            Spacer(Modifier.width(10.dp))
+            HeaderCell(pick("平均", "Avg"), WidthAvg)
+            Spacer(Modifier.width(8.dp))
+            HeaderCell(pick("费用", "Cost"), WidthCost)
+            Spacer(Modifier.width(10.dp))
+            HeaderCell(pick("占比", "Share"), WidthShare)
+        }
+        Spacer(Modifier.height(4.dp))
+        ThinRule(alpha = 0.4f)
+        if (ranked.isEmpty()) {
+            CaptionText(pick("暂无会话记录。", "No sessions recorded."), Modifier.padding(vertical = 8.dp), size = 11.sp)
+        } else {
+            ranked.forEachIndexed { index, session ->
+                if (index > 0) {
+                    ThinRule(alpha = 0.3f)
+                }
+                Row(Modifier.fillMaxWidth().heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MonoText(
+                        session.sessionId.take(16).ifBlank { pick("未分配", "unassigned") },
+                        Modifier.weight(1f),
+                        size = 10.5.sp,
+                        color = scheme.onSurface,
+                    )
+                    MonoText(roleLabel(session.role).ifBlank { pick("执行体", "worker") }, Modifier.width(WidthRole), size = 10.5.sp)
+                    NumberCell(session.requests.toString(), width = WidthCalls)
+                    NumberCell(formatCount(session.tokens), width = WidthTokens)
+                    Spacer(Modifier.width(10.dp))
+                    NumberCell(pick(session.avgDurationMs.toString() + " ms", session.avgDurationMs.toString() + "ms"), width = WidthAvg)
+                    Spacer(Modifier.width(8.dp))
+                    NumberCell(formatCost(session.actualCost), width = WidthCost)
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.width(WidthShare)) {
+                        Meter((session.actualCost / costBase).toFloat(), height = 4.dp)
+                    }
+                }
+            }
         }
     }
 }
@@ -567,6 +821,8 @@ private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long)
             SectionLabel(pick("占比", "Share"), Modifier.weight(0.9f))
             HeaderCell(pick("服务商", "Provider"), WidthProvider)
             HeaderCell(pick("调用", "Calls"), WidthCalls)
+            HeaderCell(pick("成功率", "Success"), WidthSuccess)
+            HeaderCell(pick("缓存", "Cache"), WidthCache)
             HeaderCell(pick("Token", "Tokens"), WidthTokens)
             HeaderCell(pick("费用", "Cost"), WidthCost)
         }
@@ -596,11 +852,13 @@ private fun DesktopModelTable(models: List<UsageModelBucket>, totalTokens: Long)
                             MetaChip(pick("未定价", "unpriced"), tone = Tone.WARNING, mono = true)
                         }
                     }
-                    Box(Modifier.weight(0.9f).padding(end = 10.dp)) {
+                    Box(Modifier.weight(0.9f).padding(start = 10.dp, end = 10.dp)) {
                         Meter(model.tokens.toFloat() / total.toFloat(), height = 4.dp)
                     }
                     MonoText(model.provider.ifBlank { pick("本地", "local") }, Modifier.width(WidthProvider), size = 10.5.sp)
                     NumberCell(model.requests.toString(), width = WidthCalls)
+                    NumberCell(modelSuccessText(model), width = WidthSuccess)
+                    NumberCell(modelCacheText(model), width = WidthCache)
                     NumberCell(formatCount(model.tokens), width = WidthTokens)
                     NumberCell(formatCost(model.actualCost), width = WidthCost)
                 }
@@ -966,48 +1224,98 @@ private fun MobileFailureBanner(message: String, onRetry: () -> Unit) {
 @Composable
 private fun MobileMetricTiles(summary: UsageSummary) {
     val scheme = MaterialTheme.colorScheme
-    val totals = summary.totals
+    val stats = usageMetrics(summary)
     val gap = metrics().cardGap
+    val valueSize = 22.sp
+    val captionSize = 11.5.sp
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(
+                KpiBlock(
                     pick("Token", "Tokens"),
-                    formatCount(totals.tokens),
+                    formatCount(stats.tokens),
                     caption = pick(
-                        formatCount(totals.tokensIn) + " 入 / " + formatCount(totals.tokensOut) + " 出",
-                        formatCount(totals.tokensIn) + " in / " + formatCount(totals.tokensOut) + " out",
+                        formatCount(stats.tokensIn) + " 入 / " + formatCount(stats.tokensOut) + " 出",
+                        formatCount(stats.tokensIn) + " in / " + formatCount(stats.tokensOut) + " out",
                     ),
+                    valueSize = valueSize,
+                    captionSize = captionSize,
                 )
             }
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(
+                KpiBlock(
                     pick("费用", "Cost"),
-                    formatCost(totals.actualCost),
-                    caption = if (summary.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
-                    accent = if (summary.priced) null else scheme.tertiary,
+                    formatCost(stats.actualCost),
+                    caption = if (stats.priced) pick("实收估算", "billed estimate") else pick("含未定价模型", "unpriced models"),
+                    accent = if (stats.priced) null else scheme.tertiary,
+                    valueSize = valueSize,
+                    captionSize = captionSize,
                 )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(pick("调用", "Calls"), totals.requests.toString(), caption = pick("模型调用", "model calls"))
+                KpiBlock(
+                    pick("调用", "Calls"),
+                    stats.requests.toString(),
+                    caption = pick("模型调用", "model calls"),
+                    valueSize = valueSize,
+                    captionSize = captionSize,
+                )
             }
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(pick("会话", "Sessions"), summary.bySession.size.toString(), caption = pick("有活动", "with activity"))
+                KpiBlock(
+                    pick("会话", "Sessions"),
+                    stats.sessions.toString(),
+                    caption = pick("有活动", "with activity"),
+                    valueSize = valueSize,
+                    captionSize = captionSize,
+                )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(
-                    pick("失败", "Failures"),
-                    totals.failures.toString(),
-                    caption = if (totals.failures == 0) pick("无记录", "none recorded") else pick("见明细", "see breakdown"),
-                    accent = if (totals.failures > 0) scheme.error else null,
+                KpiBlock(
+                    pick("缓存命中率", "Cache hit rate"),
+                    formatPercent1(stats.cacheRate),
+                    caption = pick(
+                        formatCount(stats.cacheHits) + " 复用 / " + formatCount(stats.tokensIn) + " 输入",
+                        formatCount(stats.cacheHits) + " reused / " + formatCount(stats.tokensIn) + " in",
+                    ),
+                    accent = scheme.primary,
+                    valueSize = valueSize,
+                    captionSize = captionSize,
                 )
             }
             PanelCard(Modifier.weight(1f)) {
-                StatBlock(pick("缓存命中", "Cache hits"), formatCount(totals.cacheHits), caption = pick("提示缓存", "prompt cache"))
+                KpiBlock(
+                    pick("成功率", "Success rate"),
+                    formatPercent1(stats.successRate),
+                    caption = if (stats.failures == 0) pick("无失败", "no failures") else pick(stats.failures.toString() + " 次失败", countOf(stats.failures, "failure", "failures")),
+                    accent = if (stats.failures > 0) scheme.error else null,
+                    valueSize = valueSize,
+                    captionSize = captionSize,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            PanelCard(Modifier.weight(1f)) {
+                KpiBlock(
+                    pick("平均延迟", "Avg latency"),
+                    if (stats.hasLatency) formatLatency(stats.latencyMs) else "—",
+                    caption = pick("按调用加权", "call weighted"),
+                    valueSize = valueSize,
+                    captionSize = captionSize,
+                )
+            }
+            PanelCard(Modifier.weight(1f)) {
+                KpiBlock(
+                    pick("单次 Token", "Tokens per call"),
+                    formatCount(stats.perCall),
+                    caption = pick("每次调用", "per call"),
+                    valueSize = valueSize,
+                    captionSize = captionSize,
+                )
             }
         }
     }
@@ -1015,31 +1323,102 @@ private fun MobileMetricTiles(summary: UsageSummary) {
 
 @Composable
 private fun MobileTrendCard(summary: UsageSummary, range: UsageRange, granularity: UsageGranularity) {
-    val points = summary.byPoint
-    val peak = points.maxOfOrNull { it.tokens } ?: 0L
-    val showLabels = points.size <= 12
+    val bars = trendBars(summary)
+    val total = bars.sumOf { it.total }
+    val peak = bars.maxOfOrNull { it.total } ?: 0L
+    val average = if (bars.isEmpty()) 0L else total / bars.size
     PanelCard {
         PanelHeader(
             title = pick("趋势", "Trend"),
-            subtitle = trendSubtitle(points.size, granularity),
+            subtitle = trendSubtitle(bars.size, granularity),
             icon = AgentIcons.Chart,
+            trailing = { TrendLegend(9.5.sp) },
         )
         Spacer(Modifier.height(12.dp))
-        if (points.isEmpty()) {
+        if (bars.isEmpty()) {
             CaptionText(pick("该范围内没有记录。", "Nothing recorded in this range."), size = 13.sp)
         } else {
-            BarStrip(
-                values = points.map { it.tokens.toFloat() },
-                labels = points.map { it.key.takeLast(5) },
-                height = 96.dp,
-                showLabels = showLabels,
-            )
+            StackedBarStrip(bars, height = 96.dp, showLabels = bars.size <= 12)
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MonoText(pick("峰值 ", "peak ") + formatCount(peak), size = 11.sp)
+            MonoText(pick("峰值 ", "peak ") + formatCount(peak) + pick(" / 均值 ", " / avg ") + formatCount(average), size = 11.sp)
             Spacer(Modifier.weight(1f))
             MonoText(pick(rangeText(range) + " / " + granularityText(granularity), range.label + " / " + granularity.label.lowercase()), size = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun MobileContextCard(summary: UsageSummary) {
+    val scheme = MaterialTheme.colorScheme
+    val stats = usageMetrics(summary)
+    val reuse = if (stats.tokens > 0L) stats.cacheHits.toDouble() / stats.tokens.toDouble() else 0.0
+    val top = topCacheSessions(summary.bySession, 3)
+    val cacheBase = summary.bySession.sumOf { it.cacheHits }.coerceAtLeast(1L)
+    PanelCard {
+        PanelHeader(
+            title = pick("上下文洞察", "Context insight"),
+            subtitle = pick("命中率、延迟与复用", "hit rate, latency and reuse"),
+            icon = AgentIcons.Wave,
+        )
+        Spacer(Modifier.height(16.dp))
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(132.dp), contentAlignment = Alignment.Center) {
+                Donut(
+                    slices = listOf(
+                        pick("命中", "hit") to (stats.cacheRate * 100.0).toFloat(),
+                        pick("未命中", "miss") to ((1.0 - stats.cacheRate) * 100.0).toFloat(),
+                    ),
+                    colors = listOf(scheme.primary, scheme.outlineVariant.copy(alpha = 0.45f)),
+                    size = 132.dp,
+                    strokeRatio = 0.18f,
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    MonoText(
+                        formatPercent1(stats.cacheRate),
+                        color = scheme.onSurface,
+                        size = 20.sp,
+                        weight = FontWeight.SemiBold,
+                    )
+                    CaptionText(pick("命中率", "hit rate"), size = 10.5.sp, maxLines = 1)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        KVRow(pick("单次平均 Token", "Tokens per call"), if (stats.requests > 0) formatCount(stats.perCall) else "—")
+        KVRow(pick("平均延迟", "Avg latency"), if (stats.hasLatency) formatLatency(stats.latencyMs) else "—")
+        KVRow(pick("上下文复用", "Context reuse"), formatPercent1(reuse))
+        Spacer(Modifier.height(6.dp))
+        ThinRule(alpha = 0.35f)
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(pick("复用最高会话", "Top reuse sessions"))
+            Spacer(Modifier.weight(1f))
+            SectionLabel(pick("命中 Token", "cached tokens"))
+        }
+        Spacer(Modifier.height(4.dp))
+        if (top.isEmpty()) {
+            CaptionText(pick("该范围内没有会话记录。", "No sessions recorded in this range."), Modifier.padding(vertical = 4.dp), size = 12.sp)
+        } else {
+            top.forEach { entry ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MonoText(
+                        entry.sessionId.take(16).ifBlank { pick("未分配", "unassigned") },
+                        Modifier.weight(1f),
+                        size = 12.sp,
+                        color = scheme.onSurface,
+                    )
+                    NumberCell(formatCount(entry.hits), width = WidthTokens)
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.width(88.dp)) {
+                        Meter(entry.hits.toFloat() / cacheBase.toFloat(), height = 6.dp)
+                    }
+                }
+            }
         }
     }
 }
@@ -1186,6 +1565,12 @@ private fun MobileModelCard(models: List<UsageModelBucket>, totalTokens: Long) {
                         if (!model.priced) {
                             MetaChip(pick("未定价", "unpriced"), tone = Tone.WARNING, mono = true)
                         }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MonoText(pick("成功率 ", "success ") + modelSuccessText(model), size = 11.sp)
+                        Spacer(Modifier.width(14.dp))
+                        MonoText(pick("缓存 ", "cache ") + modelCacheText(model), size = 11.sp)
                     }
                 }
             }
@@ -1454,6 +1839,100 @@ private fun VerticalRule(height: Dp, inset: Dp = 8.dp) {
             .height(height)
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
     )
+}
+
+private data class UsageMetrics(
+    val tokens: Long,
+    val tokensIn: Long,
+    val tokensOut: Long,
+    val cacheHits: Long,
+    val cacheRate: Double,
+    val requests: Int,
+    val failures: Int,
+    val successRate: Double,
+    val latencyMs: Int,
+    val hasLatency: Boolean,
+    val perCall: Long,
+    val actualCost: Double,
+    val priced: Boolean,
+    val sessions: Int,
+)
+
+private data class TrendBar(val label: String, val input: Long, val output: Long, val cacheRead: Long, val total: Long)
+
+private data class CachedSession(val sessionId: String, val hits: Long)
+
+private fun usageMetrics(summary: UsageSummary): UsageMetrics {
+    val totals = summary.totals
+    val cacheBase = totals.tokensIn + totals.cacheHits
+    val cacheRate = if (cacheBase > 0L) totals.cacheHits.toDouble() / cacheBase.toDouble() else 0.0
+    val successRate = if (totals.requests > 0) {
+        (totals.requests - totals.failures).toDouble() / totals.requests.toDouble()
+    } else {
+        0.0
+    }
+    val weighted = summary.bySession.sumOf { it.avgDurationMs.toLong() * it.requests.toLong() }
+    val calls = summary.bySession.sumOf { it.requests.toLong() }
+    val latency = if (calls > 0L) (weighted / calls).toInt() else 0
+    val perCall = if (totals.requests > 0) totals.tokens / totals.requests.toLong() else 0L
+    return UsageMetrics(
+        tokens = totals.tokens,
+        tokensIn = totals.tokensIn,
+        tokensOut = totals.tokensOut,
+        cacheHits = totals.cacheHits,
+        cacheRate = cacheRate,
+        requests = totals.requests,
+        failures = totals.failures,
+        successRate = successRate,
+        latencyMs = latency,
+        hasLatency = calls > 0L && weighted > 0L,
+        perCall = perCall,
+        actualCost = totals.actualCost,
+        priced = summary.priced,
+        sessions = summary.bySession.size,
+    )
+}
+
+private fun trendBars(summary: UsageSummary): List<TrendBar> {
+    return summary.byPoint.takeLast(30).map { point ->
+        val split = point.tokensIn + point.tokensOut + point.cacheHits
+        val total = if (point.tokens > 0L) point.tokens else split
+        if (split > 0L) {
+            TrendBar(point.key.takeLast(5), point.tokensIn, point.tokensOut, point.cacheHits, total)
+        } else {
+            TrendBar(point.key.takeLast(5), point.tokens, 0L, 0L, total)
+        }
+    }
+}
+
+private fun topCacheSessions(sessions: List<UsageSessionBucket>, limit: Int): List<CachedSession> =
+    sessions
+        .map { CachedSession(it.sessionId.ifBlank { it.workerId }, it.cacheHits) }
+        .filter { it.hits > 0L }
+        .sortedByDescending { it.hits }
+        .take(limit)
+
+private fun modelSuccessText(model: UsageModelBucket): String {
+    if (model.requests <= 0) return "—"
+    val rate = (model.requests - model.failures).toDouble() / model.requests.toDouble()
+    return formatPercent1(rate.coerceIn(0.0, 1.0))
+}
+
+private fun modelCacheText(model: UsageModelBucket): String {
+    if (model.tokens <= 0L) return "—"
+    return formatPercent1((model.cacheHits.toDouble() / model.tokens.toDouble()).coerceIn(0.0, 1.0))
+}
+
+private fun formatPercent1(value: Double): String {
+    val tenths = (value.coerceIn(0.0, 1.0) * 1000.0).toLong()
+    return (tenths / 10).toString() + "." + (tenths % 10).toString() + "%"
+}
+
+private fun formatLatency(ms: Int): String {
+    if (ms <= 0) return "—"
+    if (ms < 1000) return ms.toString() + " ms"
+    val tenths = ms / 100
+    return (tenths / 10).toString() + "." + (tenths % 10).toString() + " s"
 }
 
 private fun compositionParts(tokens: UsageTokens): List<Pair<String, Long>> = listOf(

@@ -63,18 +63,26 @@ data class UsagePoint(
     val key: String,
     val label: String,
     val tokens: Long,
+    val tokensIn: Long = 0,
+    val tokensOut: Long = 0,
+    val cacheHits: Long = 0,
+    val cacheWriteTokens: Long = 0,
     val cost: Double,
     val actualCost: Double,
     val requests: Int,
+    val failures: Int = 0,
 )
 
 data class UsageSessionBucket(
     val sessionId: String,
+    val workerId: String = "",
     val role: String,
     val models: List<String>,
     val tokens: Long,
     val tokensIn: Long,
     val tokensOut: Long,
+    val cacheHits: Long = 0,
+    val cacheWriteTokens: Long = 0,
     val cost: Double,
     val actualCost: Double,
     val requests: Int,
@@ -88,9 +96,14 @@ data class UsageModelBucket(
     val model: String,
     val provider: String,
     val tokens: Long,
+    val tokensIn: Long = 0,
+    val tokensOut: Long = 0,
+    val cacheHits: Long = 0,
+    val cacheWriteTokens: Long = 0,
     val cost: Double,
     val actualCost: Double,
     val requests: Int,
+    val failures: Int = 0,
     val priced: Boolean,
 )
 
@@ -121,6 +134,8 @@ data class UsageCost(
 data class UsageSummary(
     val range: String = "7d",
     val granularity: String = "day",
+    val from: Long = 0,
+    val to: Long = 0,
     val totals: UsageBucket = UsageBucket(),
     val priced: Boolean = true,
     val composition: UsageTokens = UsageTokens(),
@@ -310,9 +325,14 @@ internal fun parseUsageSummary(element: JsonElement): UsageSummary {
         key = text(node, "key"),
         label = text(node, "label").ifBlank { text(node, "key") },
         tokens = number(node, "tokens"),
+        tokensIn = number(node, "tokensIn"),
+        tokensOut = number(node, "tokensOut"),
+        cacheHits = number(node, "cacheHits"),
+        cacheWriteTokens = number(node, "cacheWriteTokens"),
         cost = real(node, "cost"),
         actualCost = real(node, "actualCost"),
         requests = number(node, "requests").toInt(),
+        failures = number(node, "failures").toInt(),
     )
 
     val totalsNode = obj["totals"] as? JsonObject
@@ -323,11 +343,14 @@ internal fun parseUsageSummary(element: JsonElement): UsageSummary {
         val item = entry.jsonObject
         UsageSessionBucket(
             sessionId = text(item, "sessionId"),
+            workerId = text(item, "workerId"),
             role = text(item, "role"),
             models = (item["models"] as? JsonArray).orEmpty().map { it.textValue().orEmpty() },
             tokens = number(item, "tokens"),
             tokensIn = number(item, "tokensIn"),
             tokensOut = number(item, "tokensOut"),
+            cacheHits = number(item, "cacheHits"),
+            cacheWriteTokens = number(item, "cacheWriteTokens"),
             cost = real(item, "cost"),
             actualCost = real(item, "actualCost"),
             requests = number(item, "requests").toInt(),
@@ -344,9 +367,14 @@ internal fun parseUsageSummary(element: JsonElement): UsageSummary {
             model = text(item, "model"),
             provider = text(item, "provider"),
             tokens = number(item, "tokens"),
+            tokensIn = number(item, "tokensIn"),
+            tokensOut = number(item, "tokensOut"),
+            cacheHits = number(item, "cacheHits"),
+            cacheWriteTokens = number(item, "cacheWriteTokens"),
             cost = real(item, "cost"),
             actualCost = real(item, "actualCost"),
             requests = number(item, "requests").toInt(),
+            failures = number(item, "failures").toInt(),
             priced = flag(item, "priced", true),
         )
     }
@@ -369,6 +397,8 @@ internal fun parseUsageSummary(element: JsonElement): UsageSummary {
     return UsageSummary(
         range = text(obj, "range").ifBlank { "7d" },
         granularity = text(obj, "granularity").ifBlank { "day" },
+        from = number(obj, "from"),
+        to = number(obj, "to"),
         totals = bucket(totalsNode),
         priced = flag(totalsNode, "priced", true),
         composition = UsageTokens(

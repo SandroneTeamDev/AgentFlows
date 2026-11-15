@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -224,7 +225,10 @@ fun AgentFlowsTheme(
     }
     val target = colorScheme ?: base
     val animated = animate(target)
-    CompositionLocalProvider(LocalShellStyle provides shellFor(flavor)) {
+    CompositionLocalProvider(
+        LocalShellStyle provides shellFor(flavor),
+        LocalContentColor provides animated.onBackground,
+    ) {
         MaterialTheme(
             colorScheme = animated,
             shapes = AgentShapes,

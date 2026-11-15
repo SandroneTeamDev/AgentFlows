@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -161,17 +164,22 @@ fun AgentFlowsApp(
 
     val density = LocalDensity.current
     var availableWidth by remember { mutableStateOf(0.dp) }
+    var availableHeight by remember { mutableStateOf(0.dp) }
     Box(
         Modifier
             .fillMaxSize()
-            .onSizeChanged { availableWidth = with(density) { it.width.toDp() } },
+            .onSizeChanged {
+                availableWidth = with(density) { it.width.toDp() }
+                availableHeight = with(density) { it.height.toDp() }
+            },
     ) {
-        val wide = availableWidth >= 840.dp
+        val desktopShell = availableWidth >= 840.dp && availableHeight >= 560.dp
         AgentFlowsTheme(
-            colorScheme = if (wide) null else dynamicScheme,
-            flavor = if (wide) ThemeFlavor.GRAPHITE else ThemeFlavor.EXPRESSIVE,
+            colorScheme = if (desktopShell) null else dynamicScheme,
+            flavor = if (desktopShell) ThemeFlavor.GRAPHITE else ThemeFlavor.EXPRESSIVE,
         ) {
             EffectRoot {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val navItems = AgentTab.entries.map { ShellNavItem(it.label, iconFor(it)) }
                 val content: @Composable () -> Unit = {
                     Crossfade(
@@ -264,7 +272,7 @@ fun AgentFlowsApp(
                     }
                 }
 
-                if (wide) {
+                if (desktopShell) {
                     DesktopShell(
                         navItems = navItems,
                         selectedNav = tab.ordinal,
@@ -337,6 +345,7 @@ fun AgentFlowsApp(
                         },
                         content = { content() },
                     )
+                }
                 }
             }
         }

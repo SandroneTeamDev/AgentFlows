@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import sandrone.agentflows.shared.i18n.AppLanguage
+import sandrone.agentflows.shared.i18n.AppLocale
 
 class EngineClientTest {
 
@@ -154,11 +156,22 @@ class EngineClientTest {
 
     @Test
     fun durationAndCountFormattingStayReadable() {
+        AppLocale.language = AppLanguage.ZH
+        assertEquals("0 秒", sandrone.agentflows.shared.ui.formatDuration(0))
+        assertEquals("45 秒", sandrone.agentflows.shared.ui.formatDuration(45_000))
+        assertEquals("2 分 5 秒", sandrone.agentflows.shared.ui.formatDuration(125_000))
+        assertEquals("3 小时 4 分", sandrone.agentflows.shared.ui.formatDuration(11_040_000))
+        assertEquals("1.2K", sandrone.agentflows.shared.ui.formatCount(1234))
+        assertEquals("$1.50", sandrone.agentflows.shared.ui.formatCost(1.5))
+    }
+
+    @Test
+    fun durationFormattingFollowsTheInterfaceLanguage() {
+        AppLocale.language = AppLanguage.EN
         assertEquals("0s", sandrone.agentflows.shared.ui.formatDuration(0))
         assertEquals("45s", sandrone.agentflows.shared.ui.formatDuration(45_000))
         assertEquals("2m 5s", sandrone.agentflows.shared.ui.formatDuration(125_000))
         assertEquals("3h 4m", sandrone.agentflows.shared.ui.formatDuration(11_040_000))
-        assertEquals("1.2K", sandrone.agentflows.shared.ui.formatCount(1234))
-        assertEquals("$1.50", sandrone.agentflows.shared.ui.formatCost(1.5))
+        AppLocale.language = AppLanguage.ZH
     }
 }

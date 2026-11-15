@@ -2,12 +2,14 @@ package sandrone.agentflows.shared.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -15,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,115 +31,389 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import sandrone.agentflows.shared.AgentFlowEntry
+import sandrone.agentflows.shared.design.CaptionText
+import sandrone.agentflows.shared.design.ChipFilterRow
+import sandrone.agentflows.shared.design.CodeSurface
+import sandrone.agentflows.shared.design.Collapsible
+import sandrone.agentflows.shared.design.EmptyHint
+import sandrone.agentflows.shared.design.MetaChip
+import sandrone.agentflows.shared.design.MonoText
+import sandrone.agentflows.shared.design.NumberCell
+import sandrone.agentflows.shared.design.PulsingDot
+import sandrone.agentflows.shared.design.Radius
+import sandrone.agentflows.shared.design.SectionLabel
+import sandrone.agentflows.shared.design.Space
+import sandrone.agentflows.shared.design.StatBlock
+import sandrone.agentflows.shared.design.ThinRule
+import sandrone.agentflows.shared.design.Tone
+import sandrone.agentflows.shared.design.UnderlineTabs
+import sandrone.agentflows.shared.design.isDesktop
+import sandrone.agentflows.shared.design.metrics
 import sandrone.agentflows.shared.nowMillis
+
+private val FlowFilters: List<Pair<String, String>> = listOf(
+    "all" to "All",
+    "trigger" to "Trigger",
+    "router_decision" to "Router",
+    "worker_start" to "Worker",
+    "tool_call" to "Tool",
+    "error" to "Alert",
+)
+
+private val TimeColumn = 64.dp
+private val TypeColumn = 132.dp
+private val AgeColumn = 62.dp
+private val ChevronColumn = 16.dp
+private val MobileRail = 22.dp
+private val MobileDot = 10.dp
+private val MobileSpineInset = 10.dp
+private const val LiveWindowMillis = 120_000L
+
+private fun countOf(flows: List<AgentFlowEntry>, key: String): Int =
+    if (key == "all") flows.size else flows.count { it.type == key }
+
+private fun filterCounts(flows: List<AgentFlowEntry>): Map<String, Int> =
+    FlowFilters.associate { (key, _) -> key to countOf(flows, key) }
+
+private fun newestFirst(flows: List<AgentFlowEntry>): List<AgentFlowEntry> =
+    flows.sortedByDescending { it.timestamp }
+
+private fun clockOf(millis: Long): String =
+    if (millis <= 0L) "--:--:--" else formatClock(millis) + ":" + ((millis / 1000) % 60).toString().padStart(2, '0')
+
+private fun filterLabel(key: String): String =
+    FlowFilters.firstOrNull { it.first == key }?.second ?: "matching"
+
+private fun flowTone(type: String): Tone = when (flowToneOf(type)) {
+    FlowTone.TRIGGER -> Tone.WARNING
+    FlowTone.ROUTER -> Tone.ACCENT
+    FlowTone.WORKER -> Tone.POSITIVE
+    FlowTone.TOOL -> Tone.NEUTRAL
+    FlowTone.RESULT -> Tone.NEUTRAL
+    FlowTone.ALERT -> Tone.DANGER
+    FlowTone.NEUTRAL -> Tone.NEUTRAL
+}
+
+@Composable
+private fun flowAccent(type: String): Color = when (flowToneOf(type)) {
+    FlowTone.TRIGGER -> MaterialTheme.colorScheme.tertiary
+    FlowTone.ROUTER -> MaterialTheme.colorScheme.primary
+    FlowTone.WORKER -> MaterialTheme.colorScheme.secondary
+    FlowTone.ALERT -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.outline
+}
 
 @Composable
 fun FlowsPanel(
     flows: List<AgentFlowEntry>,
     modifier: Modifier = Modifier,
 ) {
-    var filter by remember { mutableStateOf<String>("all") }
-    val filters = remember {
-        listOf(
-            "all" to "All",
-            "trigger" to "Trigger",
-            "router_decision" to "Router",
-            "worker_start" to "Worker",
-            "tool_call" to "Tool",
-            "error" to "Alert",
+    var filter by remember { mutableStateOf("all") }
+    val newest = remember(flows) { newestFirst(flows) }
+    val visible = remember(newest, filter) {
+        if (filter == "all") newest else newest.filter { it.type == filter }
+    }
+    val counts = remember(flows) { filterCounts(flows) }
+    val now = nowMillis()
+    if (isDesktop()) {
+        DesktopFlowsPanel(
+            flows = flows,
+            visible = visible,
+            counts = counts,
+            filter = filter,
+            now = now,
+            onFilter = { filter = it },
+            modifier = modifier,
+        )
+    } else {
+        MobileFlowsPanel(
+            flows = flows,
+            visible = visible,
+            counts = counts,
+            filter = filter,
+            now = now,
+            onFilter = { filter = it },
+            modifier = modifier,
         )
     }
-    val visible = remember(flows, filter) {
-        if (filter == "all") flows else flows.filter { it.type == filter }
-    }
+}
 
-    Column(modifier.fillMaxWidth()) {
+@Composable
+private fun DesktopFlowsPanel(
+    flows: List<AgentFlowEntry>,
+    visible: List<AgentFlowEntry>,
+    counts: Map<String, Int>,
+    filter: String,
+    now: Long,
+    onFilter: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val keys = FlowFilters.map { it.first }
+    val labels = FlowFilters.map { it.second }
+    val selected = keys.indexOf(filter).coerceAtLeast(0)
+    val newestStamp = flows.maxOfOrNull { it.timestamp } ?: 0L
+    val live = newestStamp > 0L && now - newestStamp < LiveWindowMillis
+    Column(modifier.fillMaxSize().padding(horizontal = metrics().gutter)) {
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.fillMaxWidth().padding(top = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            filters.forEach { (key, label) ->
-                SelectablePill(label = label, selected = filter == key, onClick = { filter = key })
+            Box(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
+                UnderlineTabs(
+                    tabs = labels,
+                    selected = selected,
+                    onSelect = { index -> onFilter(keys.getOrElse(index) { "all" }) },
+                    counts = keys.map { counts[it] ?: 0 },
+                )
             }
+            Spacer(Modifier.width(Space.lg))
+            FlowSummaryStrip(flows)
+            Spacer(Modifier.width(Space.md))
+            LiveBadge(live)
         }
+        Spacer(Modifier.height(Space.xs))
+        ThinRule(alpha = 0.7f)
+        ColumnHeader()
+        ThinRule(alpha = 0.55f)
         if (visible.isEmpty()) {
-            EmptyState(
-                icon = AgentIcons.Bolt,
-                title = "No events yet",
-                detail = "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen.",
-            )
-            return
-        }
-        LazyColumn(
-            Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(visible.asReversed(), key = { it.id }) { entry -> FlowRow(entry) }
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (flows.isEmpty()) {
+                    EmptyHint(
+                        AgentIcons.Bolt,
+                        "No flow events yet",
+                        "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen.",
+                    )
+                } else {
+                    EmptyHint(
+                        AgentIcons.Filter,
+                        "No ${filterLabel(filter)} events",
+                        "Nothing matches this filter. Pick All to see the full session timeline.",
+                    )
+                }
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                items(visible, key = { it.id }) { entry ->
+                    DesktopFlowRow(entry, now)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun FlowRow(entry: AgentFlowEntry) {
+private fun ColumnHeader() {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionLabel("Time", Modifier.width(TimeColumn))
+        SectionLabel("Type", Modifier.width(TypeColumn))
+        SectionLabel("Event", Modifier.weight(1f))
+        Box(Modifier.width(AgeColumn), contentAlignment = Alignment.CenterEnd) {
+            SectionLabel("Age")
+        }
+        Spacer(Modifier.width(ChevronColumn))
+    }
+}
+
+@Composable
+private fun DesktopFlowRow(entry: AgentFlowEntry, now: Long) {
     var expanded by remember(entry.id) { mutableStateOf(false) }
-    val tone = flowToneOf(entry.type)
-    Row(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.width(26.dp).fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .padding(top = 18.dp)
-                    .size(10.dp)
-                    .background(nodeColor(tone), CircleShape),
+            MonoText(clockOf(entry.timestamp), Modifier.width(TimeColumn), size = 10.5.sp)
+            Box(Modifier.width(TypeColumn)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .width(2.dp)
+                            .height(12.dp)
+                            .clip(CircleShape)
+                            .background(flowAccent(entry.type)),
+                    )
+                    Spacer(Modifier.width(Space.xs + Space.xxs))
+                    MetaChip(flowLabel(entry.type), tone = Tone.MUTED)
+                }
+            }
+            Text(
+                entry.label,
+                Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = scheme.onSurface,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
             )
-            Box(
-                Modifier
-                    .padding(top = 4.dp)
-                    .width(2.dp)
-                    .height(72.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            NumberCell(
+                formatRelative(entry.timestamp, now),
+                width = AgeColumn,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(Space.xs))
+            Icon(
+                if (expanded) AgentIcons.ChevronUp else AgentIcons.ChevronDown,
+                null,
+                Modifier.size(12.dp),
+                tint = scheme.outline,
             )
         }
-        Spacer(Modifier.width(4.dp))
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.weight(1f).clickable { expanded = !expanded },
+        Collapsible(expanded) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = TimeColumn + TypeColumn, end = Space.lg, top = Space.xxs, bottom = Space.sm),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Payload")
+                    Spacer(Modifier.weight(1f))
+                    MonoText(entry.type + " · " + entry.details.lines().size + "L", size = 10.sp)
+                }
+                Spacer(Modifier.height(Space.xs))
+                if (entry.details.isBlank()) {
+                    CaptionText("No payload recorded for this event.", maxLines = 1, size = 11.sp)
+                } else {
+                    CodeSurface(entry.details)
+                }
+            }
+        }
+        ThinRule(alpha = 0.3f)
+    }
+}
+
+@Composable
+private fun MobileFlowsPanel(
+    flows: List<AgentFlowEntry>,
+    visible: List<AgentFlowEntry>,
+    counts: Map<String, Int>,
+    filter: String,
+    now: Long,
+    onFilter: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val gutter = metrics().gutter
+    Column(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = Space.md)) {
+            ChipFilterRow(
+                options = FlowFilters,
+                selected = filter,
+                onSelect = onFilter,
+                counts = counts,
+            )
+            if (flows.isNotEmpty()) {
+                Spacer(Modifier.height(Space.md))
+                FlowSummaryStrip(flows)
+            }
+        }
+        Spacer(Modifier.height(Space.md))
+        if (visible.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (flows.isEmpty()) {
+                    EmptyHint(
+                        AgentIcons.Bolt,
+                        "No flow events yet",
+                        "Triggers, Router decisions, Worker starts, tool calls and alerts appear here as they happen.",
+                    )
+                } else {
+                    EmptyHint(
+                        AgentIcons.Filter,
+                        "No ${filterLabel(filter)} events",
+                        "Nothing matches this filter. Pick All to see the full session timeline.",
+                    )
+                }
+            }
+        } else {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                Box(
+                    Modifier
+                        .padding(start = gutter + MobileSpineInset, top = Space.md, bottom = Space.xl)
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                )
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = gutter),
+                    verticalArrangement = Arrangement.spacedBy(Space.md),
+                ) {
+                    items(visible, key = { it.id }) { entry ->
+                        MobileFlowCard(entry, now)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(Space.sm))
+    }
+}
+
+@Composable
+private fun MobileFlowCard(entry: AgentFlowEntry, now: Long) {
+    var expanded by remember(entry.id) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(Radius.lg)
+    Row(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.width(MobileRail).padding(top = Space.lg + Space.xs),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            Column(Modifier.padding(16.dp)) {
+            Box(Modifier.size(MobileDot).clip(CircleShape).background(flowAccent(entry.type)))
+        }
+        Surface(
+            color = scheme.surfaceContainer,
+            shape = shape,
+            modifier = Modifier.weight(1f).clip(shape).clickable { expanded = !expanded },
+        ) {
+            Column(Modifier.padding(horizontal = Space.md + Space.xxs, vertical = Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TonePill(tone, flowLabel(entry.type))
-                    Spacer(Modifier.width(8.dp))
-                    TimestampLabel(entry.timestamp)
+                    MetaChip(flowLabel(entry.type), tone = flowTone(entry.type))
+                    Spacer(Modifier.width(Space.sm))
+                    MonoText(formatRelative(entry.timestamp, now), size = 10.sp)
                     Spacer(Modifier.weight(1f))
                     Icon(
                         if (expanded) AgentIcons.ChevronUp else AgentIcons.ChevronDown,
                         null,
                         Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = scheme.onSurfaceVariant,
                     )
                 }
-                Text(entry.label, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleSmall)
-                ExpandableArea(expanded) {
-                    Box(Modifier.padding(top = 12.dp)) { MonospaceBlock(entry.details) }
+                Text(
+                    entry.label,
+                    Modifier.padding(top = Space.sm),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = scheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium),
+                )
+                Collapsible(expanded) {
+                    Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            MonoText(entry.type, size = 10.sp)
+                            Spacer(Modifier.weight(1f))
+                            MonoText(clockOf(entry.timestamp), size = 10.sp)
+                        }
+                        Spacer(Modifier.height(Space.xs))
+                        if (entry.details.isBlank()) {
+                            CaptionText("No payload recorded for this event.", maxLines = 1, size = 11.sp)
+                        } else {
+                            CodeSurface(entry.details)
+                        }
+                    }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun nodeColor(tone: FlowTone) = when (tone) {
-    FlowTone.ALERT -> MaterialTheme.colorScheme.error
-    FlowTone.ROUTER -> MaterialTheme.colorScheme.primary
-    FlowTone.WORKER -> MaterialTheme.colorScheme.secondary
-    FlowTone.TRIGGER -> MaterialTheme.colorScheme.tertiary
-    FlowTone.TOOL -> MaterialTheme.colorScheme.outline
-    else -> MaterialTheme.colorScheme.outline
 }
 
 @Composable
@@ -144,34 +422,113 @@ fun FlowSummaryStrip(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier)
     val workers = flows.count { it.type == "worker_start" }
     val tools = flows.count { it.type == "tool_call" }
     val alerts = flows.count { it.type == "error" || it.type == "watchdog_alert" }
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricTile("Triggers", triggers.toString(), Modifier.weight(1f))
-        MetricTile("Workers", workers.toString(), Modifier.weight(1f))
-        MetricTile("Tool calls", tools.toString(), Modifier.weight(1f))
-        MetricTile("Alerts", alerts.toString(), Modifier.weight(1f), accent = MaterialTheme.colorScheme.error)
+    if (isDesktop()) {
+        Row(
+            modifier,
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            InlineStat("Triggers", triggers.toString())
+            InlineStat("Workers", workers.toString())
+            InlineStat("Tool calls", tools.toString())
+            InlineStat("Alerts", alerts.toString(), accent = MaterialTheme.colorScheme.error)
+        }
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(Radius.lg),
+            modifier = modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatBlock("Triggers", triggers.toString(), Modifier.weight(1f))
+                SummaryDivider()
+                StatBlock("Workers", workers.toString(), Modifier.weight(1f))
+                SummaryDivider()
+                StatBlock("Tool calls", tools.toString(), Modifier.weight(1f))
+                SummaryDivider()
+                StatBlock(
+                    "Alerts",
+                    alerts.toString(),
+                    Modifier.weight(1f),
+                    accent = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = Space.xxs)
+            .width(1.dp)
+            .height(28.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    )
+}
+
+@Composable
+private fun InlineStat(label: String, value: String, accent: Color? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        SectionLabel(label)
+        Spacer(Modifier.width(Space.xs))
+        MonoText(
+            value,
+            color = accent ?: MaterialTheme.colorScheme.onSurface,
+            size = 11.sp,
+            weight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun LiveBadge(live: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (live) {
+            PulsingDot(size = 5.dp)
+        } else {
+            Box(
+                Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+            )
+        }
+        Spacer(Modifier.width(Space.xs))
+        MonoText(if (live) "live" else "idle", size = 10.sp)
     }
 }
 
 @Composable
 fun RecentFlowPreview(flows: List<AgentFlowEntry>, modifier: Modifier = Modifier) {
-    val latest = flows.lastOrNull()
+    val desktop = isDesktop()
+    val latest = remember(flows) { newestFirst(flows).firstOrNull() }
     if (latest == null) {
-        Text(
+        CaptionText(
             "No flow events recorded in this session.",
             modifier,
-            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            size = if (desktop) metrics().captionSize else 13.sp,
         )
         return
     }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TonePill(flowToneOf(latest.type), flowLabel(latest.type))
-        Spacer(Modifier.width(8.dp))
-        Text(latest.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        MetaChip(flowLabel(latest.type), tone = flowTone(latest.type), mono = desktop)
+        Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
         Text(
-            formatRelative(latest.timestamp, nowMillis()),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            latest.label,
+            Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = if (desktop) 11.5.sp else 13.sp),
         )
+        Spacer(Modifier.width(Space.sm))
+        MonoText(formatRelative(latest.timestamp, nowMillis()), size = if (desktop) 10.sp else 11.sp)
     }
 }

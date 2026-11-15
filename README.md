@@ -7,7 +7,7 @@ A local-first, continuously running personal Super-agent built around an event-f
 ## Features and direction
 
 - **Event-flow workspace** — inspect Triggers, Router decisions, Worker activity, tool arguments, and results in an expandable timeline.
-- **Native expressive interface** — Compose Multiplatform with Material Design 3, dynamic color where available, spring motion, and an adaptive workspace.
+- **Adaptive native interface** — Compose Multiplatform on Material Design 3 with dynamic color where available. One shared UI switches between a touch-first mobile shell (bottom navigation, tonal cards, large targets) and a desktop shell (sidebar, dense rows, monospace metadata, status bar) at an 840 dp breakpoint.
 - **Single-kernel engine** — a bundled Node.js CLI owns all Agent state and execution, ZCode-style: the interface is a thin renderer that talks to it over authenticated loopback JSON-RPC, and every Agent capability lives in one process with one source of truth.
 - **Two-layer orchestration** — a lightweight Router batches and dispatches incoming Triggers; Workers execute in isolated worktrees with per-agent Markdown memory.
 - **Event-driven core** — two-level filtering (deterministic fast path, semantic slow path), thread subscriptions with direct dispatch, Inline & Spill context with chain-of-recall, and speculative execution.

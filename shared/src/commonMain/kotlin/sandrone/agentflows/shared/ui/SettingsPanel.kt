@@ -1,22 +1,31 @@
 package sandrone.agentflows.shared.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,11 +33,55 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import sandrone.agentflows.shared.EffectMode
 import sandrone.agentflows.shared.EffectPrefs
+import sandrone.agentflows.shared.ProviderEntry
+import sandrone.agentflows.shared.TaskEntry
+import sandrone.agentflows.shared.WorkerEntry
 import sandrone.agentflows.shared.WorkspaceSnapshot
+import sandrone.agentflows.shared.design.AvatarTile
+import sandrone.agentflows.shared.design.BodyText
+import sandrone.agentflows.shared.design.BusyIndicator
+import sandrone.agentflows.shared.design.CaptionText
+import sandrone.agentflows.shared.design.ChipFilterRow
+import sandrone.agentflows.shared.design.CodeSurface
+import sandrone.agentflows.shared.design.EmptyHint
+import sandrone.agentflows.shared.design.KVRow
+import sandrone.agentflows.shared.design.MetaChip
+import sandrone.agentflows.shared.design.MonoText
+import sandrone.agentflows.shared.design.PanelCard
+import sandrone.agentflows.shared.design.PulsingDot
+import sandrone.agentflows.shared.design.Radius
+import sandrone.agentflows.shared.design.SectionLabel
+import sandrone.agentflows.shared.design.Space
+import sandrone.agentflows.shared.design.StatBlock
+import sandrone.agentflows.shared.design.StatusPill
+import sandrone.agentflows.shared.design.ThinRule
+import sandrone.agentflows.shared.design.Tone
+import sandrone.agentflows.shared.design.container
+import sandrone.agentflows.shared.design.content
+import sandrone.agentflows.shared.design.isDesktop
+import sandrone.agentflows.shared.design.metrics
+import sandrone.agentflows.shared.effectSurface
+import sandrone.agentflows.shared.nowMillis
+
+private val EffectOptions = listOf(
+    "DISABLED" to "Off",
+    "BLUR" to "Blur",
+    "GLASS" to "Glass",
+)
+
+private const val ProviderIdHint = "local"
+private const val ProviderUrlHint = "http://127.0.0.1:11434/v1"
+private const val ProviderModelsHint = "llama3, qwen2.5"
+private const val WatchdogQuestionHint = "Why did the last worker stop?"
 
 @Composable
 fun SettingsPanel(
@@ -45,227 +98,906 @@ fun SettingsPanel(
     onCancelTask: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        RuntimeCard(snapshot)
-        AppearanceCard(prefs, onPrefs)
-        ModelCard(snapshot, onRegisterProvider, onProbe, probeResult, providerBusy)
-        WatchdogCard(snapshot, watchdogAnswer, watchdogBusy, onAskWatchdog)
-        WorkersCard(snapshot, onCancelTask)
-    }
-}
-
-@Composable
-private fun RuntimeCard(snapshot: WorkspaceSnapshot) {
-    SectionCard(
-        title = "Local runtime",
-        subtitle = snapshot.message,
-        icon = AgentIcons.Wave,
-        trailing = { StatusDot(snapshot.connected) },
-    ) {
-        KeyValueRow("Engine", if (snapshot.connected) "online" else "offline")
-        KeyValueRow("Uptime", formatDuration(snapshot.uptimeMs))
-        KeyValueRow("Model routing", if (snapshot.modelConfigured) "configured" else "not configured")
-        KeyValueRow("Active workers", snapshot.workers.size.toString())
-        KeyValueRow("Recorded events", snapshot.flows.size.toString())
-        KeyValueRow("Watchdog", if (snapshot.watchdog.healthy) "healthy" else "attention")
-    }
-}
-
-@Composable
-private fun AppearanceCard(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit) {
-    SectionCard(
-        title = "Appearance",
-        subtitle = "backdrop effect for the capsule surfaces",
-        icon = AgentIcons.Settings,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SelectablePill("Off", prefs.mode == EffectMode.DISABLED, onClick = { onPrefs(prefs.copy(mode = EffectMode.DISABLED)) })
-            SelectablePill("Blur", prefs.mode == EffectMode.BLUR, onClick = { onPrefs(prefs.copy(mode = EffectMode.BLUR)) })
-            SelectablePill("Glass", prefs.mode == EffectMode.GLASS, onClick = { onPrefs(prefs.copy(mode = EffectMode.GLASS)) })
+    if (isDesktop()) {
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp),
+        ) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Row(
+                    Modifier.widthIn(max = metrics().contentMax).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(metrics().cardGap),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(metrics().cardGap)) {
+                        RuntimeSection(snapshot)
+                        AppearanceSection(prefs, onPrefs)
+                        WatchdogSection(snapshot, watchdogAnswer, watchdogBusy, onAskWatchdog)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(metrics().cardGap)) {
+                        ModelsSection(snapshot, onRegisterProvider, onProbe, probeResult, providerBusy)
+                        WorkersSection(snapshot, onCancelTask)
+                    }
+                }
+            }
+            Spacer(Modifier.height(Space.lg))
         }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Blur radius", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text(
+    } else {
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = metrics().gutter, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(metrics().sectionGap),
+        ) {
+            RuntimeSection(snapshot)
+            AppearanceSection(prefs, onPrefs)
+            ModelsSection(snapshot, onRegisterProvider, onProbe, probeResult, providerBusy)
+            WatchdogSection(snapshot, watchdogAnswer, watchdogBusy, onAskWatchdog)
+            WorkersSection(snapshot, onCancelTask)
+            Spacer(Modifier.height(Space.sm))
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    tone: Tone = Tone.NEUTRAL,
+    status: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    PanelCard(modifier = modifier) {
+        if (desktop) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(13.dp), tint = scheme.primary)
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    title,
+                    Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                )
+                if (status != null) {
+                    Spacer(Modifier.width(Space.sm))
+                    status()
+                }
+            }
+            Spacer(Modifier.height(7.dp))
+            ThinRule(alpha = 0.6f)
+            Spacer(Modifier.height(Space.sm))
+            Column(Modifier.fillMaxWidth(), content = content)
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                AvatarTile(
+                    icon = icon,
+                    size = 40.dp,
+                    shape = RoundedCornerShape(Radius.md),
+                    container = tone.container(),
+                    content = tone.content(),
+                )
+                Spacer(Modifier.width(Space.md))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = metrics().titleSize,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                    )
+                    if (subtitle != null) {
+                        CaptionText(subtitle, Modifier.padding(top = 1.dp), maxLines = 2)
+                    }
+                }
+                if (status != null) {
+                    Spacer(Modifier.width(Space.sm))
+                    status()
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Column(Modifier.fillMaxWidth(), content = content)
+        }
+    }
+}
+
+@Composable
+private fun RuntimeSection(snapshot: WorkspaceSnapshot) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    SettingsSection(
+        title = "Local runtime",
+        icon = AgentIcons.Wave,
+        subtitle = snapshot.message,
+        tone = Tone.ACCENT,
+        status = { StatusPill(snapshot.connected, "online", "offline") },
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(if (desktop) Space.lg else Space.md),
+        ) {
+            StatBlock("uptime", formatDuration(snapshot.uptimeMs), Modifier.weight(1f))
+            StatBlock("workers", snapshot.workers.size.toString(), Modifier.weight(1f))
+            StatBlock("events", snapshot.flows.size.toString(), Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(Space.sm))
+        ThinRule(alpha = if (desktop) 0.3f else 0.35f)
+        KVRow(
+            "Engine",
+            if (snapshot.connected) "online" else "offline",
+            valueColor = if (snapshot.connected) scheme.primary else scheme.error,
+        )
+        KVRow("Model routing", if (snapshot.modelConfigured) "configured" else "not configured")
+        KVRow(
+            "Watchdog",
+            if (snapshot.watchdog.healthy) "healthy" else "attention",
+            valueColor = if (snapshot.watchdog.healthy) null else scheme.error,
+        )
+        if (desktop) {
+            Spacer(Modifier.height(Space.xs))
+            CaptionText(snapshot.message, maxLines = 2, size = 10.5.sp)
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSection(prefs: EffectPrefs, onPrefs: (EffectPrefs) -> Unit) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    SettingsSection(
+        title = "Appearance",
+        icon = AgentIcons.Settings,
+        subtitle = "backdrop effect for capsule surfaces",
+        tone = Tone.NEUTRAL,
+    ) {
+        if (desktop) {
+            ChipFilterRow(
+                options = EffectOptions,
+                selected = prefs.mode.name,
+                onSelect = { key ->
+                    EffectMode.entries.firstOrNull { it.name == key }?.let { mode -> onPrefs(prefs.copy(mode = mode)) }
+                },
+            )
+        } else {
+            EffectSegments(prefs.mode) { mode -> onPrefs(prefs.copy(mode = mode)) }
+        }
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        EffectPreview(prefs)
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (desktop) {
+                SectionLabel("Blur radius", Modifier.weight(1f))
+            } else {
+                BodyText("Blur radius", Modifier.weight(1f), maxLines = 1)
+            }
+            MonoText(
                 "${prefs.blurRadiusDp.toInt()} dp",
-                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                size = if (desktop) 10.sp else 12.sp,
+                color = scheme.onSurface,
             )
         }
         Slider(
             value = prefs.blurRadiusDp,
-            onValueChange = { onPrefs(prefs.copy(blurRadiusDp = it)) },
+            onValueChange = { value -> onPrefs(prefs.copy(blurRadiusDp = value)) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = prefs.mode == EffectMode.BLUR,
             valueRange = 4f..48f,
             steps = 10,
-            enabled = prefs.mode == EffectMode.BLUR,
-            modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            when (prefs.mode) {
-                EffectMode.DISABLED -> "Effects are off. Surfaces use a flat container colour."
-                EffectMode.BLUR -> "Blur follows the radius above. It works on Android 10 and later through a capture-backed renderer."
-                EffectMode.GLASS -> "Glass uses a fixed optical preset and does not expose a radius control."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        CaptionText(
+            effectExplanation(prefs.mode),
+            maxLines = 3,
+            size = if (desktop) 11.sp else 13.sp,
+        )
+        Spacer(Modifier.height(Space.xs))
+        MonoText(
+            "radius ${prefs.blurRadiusDp.toInt()} dp · tint ${(prefs.glassTintAlpha * 100f).toInt()}%",
+            size = if (desktop) 9.5.sp else 11.sp,
         )
     }
 }
 
 @Composable
-private fun ModelCard(
+private fun EffectSegments(selected: EffectMode, onSelect: (EffectMode) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(Radius.md)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(scheme.surfaceContainerHighest).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        EffectMode.entries.forEach { mode ->
+            val active = mode == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(if (active) scheme.primary else Color.Transparent)
+                    .clickable { onSelect(mode) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    effectLabel(mode),
+                    maxLines = 1,
+                    color = if (active) scheme.onPrimary else scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 13.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EffectPreview(prefs: EffectPrefs) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(if (desktop) Radius.sm else Radius.lg)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .effectSurface(prefs, scheme.surfaceContainerHigh)
+            .border(1.dp, scheme.outlineVariant.copy(alpha = if (desktop) 0.7f else 0.4f), shape)
+            .padding(horizontal = if (desktop) 10.dp else 14.dp, vertical = if (desktop) 7.dp else 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PulsingDot(size = if (desktop) 5.dp else 6.dp)
+        Spacer(Modifier.width(if (desktop) 7.dp else 9.dp))
+        MonoText(
+            if (prefs.mode == EffectMode.DISABLED) "flat surface" else "live backdrop",
+            size = if (desktop) 10.sp else 11.sp,
+        )
+        Spacer(Modifier.weight(1f))
+        MonoText(effectLabel(prefs.mode), size = if (desktop) 9.5.sp else 10.5.sp)
+    }
+}
+
+@Composable
+private fun ModelsSection(
     snapshot: WorkspaceSnapshot,
     onRegisterProvider: (String, String, String) -> Unit,
     onProbe: () -> Unit,
     probeResult: String?,
     providerBusy: Boolean,
 ) {
-    var id by remember { mutableStateOf("local") }
+    val desktop = isDesktop()
+    var providerId by remember { mutableStateOf("local") }
     var baseUrl by remember { mutableStateOf("http://127.0.0.1:11434/v1") }
     var models by remember { mutableStateOf("") }
-
-    SectionCard(
+    val canRegister = !providerBusy && providerId.isNotBlank() && baseUrl.isNotBlank()
+    val register = {
+        onRegisterProvider(providerId.trim(), baseUrl.trim(), parseModels(models))
+    }
+    SettingsSection(
         title = "Models",
-        subtitle = "registered providers stay on this device",
         icon = AgentIcons.Bolt,
+        subtitle = "registered providers stay on this device",
+        tone = Tone.POSITIVE,
+        status = {
+            MetaChip(
+                text = when (snapshot.providers.size) {
+                    0 -> "none"
+                    1 -> "1 provider"
+                    else -> "${snapshot.providers.size} providers"
+                },
+                tone = if (snapshot.providers.isEmpty()) Tone.MUTED else Tone.POSITIVE,
+                mono = true,
+            )
+        },
     ) {
         if (snapshot.providers.isEmpty()) {
-            Text("No provider registered yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            EmptyHint(
+                icon = AgentIcons.Database,
+                title = "No providers registered",
+                detail = "Register a local endpoint to let the Router dispatch model calls on this device.",
+                dense = desktop,
+            )
         } else {
-            snapshot.providers.forEach { provider ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(provider.id, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            provider.baseUrl,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                    Pill(if (provider.models.isEmpty()) "no models" else "${provider.models.size} models")
+            Column(Modifier.fillMaxWidth()) {
+                snapshot.providers.forEachIndexed { index, provider ->
+                    if (desktop && index > 0) ThinRule(alpha = 0.25f)
+                    ProviderRow(provider)
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = id,
-            onValueChange = { id = it },
-            label = { Text("Provider id") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = { Text("Base URL") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = models,
-            onValueChange = { models = it },
-            label = { Text("Models, comma separated") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    val parsed = models.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                    onRegisterProvider(id.trim(), baseUrl.trim(), parsed.joinToString(","))
-                },
-                enabled = !providerBusy && id.isNotBlank() && baseUrl.isNotBlank(),
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        ThinRule(alpha = if (desktop) 0.3f else 0.35f)
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        if (desktop) {
+            SectionLabel("Register provider")
+            Spacer(Modifier.height(Space.xs))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalAlignment = Alignment.Top,
             ) {
-                Icon(AgentIcons.Plus, null, Modifier.width(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Register")
+                SettingsField(
+                    label = "Provider id",
+                    value = providerId,
+                    onValueChange = { providerId = it },
+                    modifier = Modifier.weight(0.8f),
+                    placeholder = ProviderIdHint,
+                    enabled = !providerBusy,
+                )
+                SettingsField(
+                    label = "Base URL",
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    modifier = Modifier.weight(1.4f),
+                    placeholder = ProviderUrlHint,
+                    enabled = !providerBusy,
+                )
+                SettingsField(
+                    label = "Models",
+                    value = models,
+                    onValueChange = { models = it },
+                    modifier = Modifier.weight(1.2f),
+                    placeholder = ProviderModelsHint,
+                    enabled = !providerBusy,
+                )
             }
-            TextButton(onClick = onProbe, enabled = !providerBusy) { Text("Probe") }
+            Spacer(Modifier.height(Space.sm))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsAction("Register", AgentIcons.Plus, onClick = register, enabled = canRegister)
+                SettingsAction("Probe", AgentIcons.Wave, onClick = onProbe, enabled = !providerBusy, filled = false)
+                Spacer(Modifier.weight(1f))
+                if (providerBusy) {
+                    BusyIndicator()
+                    Spacer(Modifier.width(6.dp))
+                    MonoText("contacting provider", size = 9.5.sp)
+                } else {
+                    MonoText("comma separated models", size = 9.5.sp)
+                }
+            }
+        } else {
+            SettingsField(
+                label = "Provider id",
+                value = providerId,
+                onValueChange = { providerId = it },
+                placeholder = ProviderIdHint,
+                enabled = !providerBusy,
+            )
+            Spacer(Modifier.height(Space.md))
+            SettingsField(
+                label = "Base URL",
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                placeholder = ProviderUrlHint,
+                enabled = !providerBusy,
+            )
+            Spacer(Modifier.height(Space.md))
+            SettingsField(
+                label = "Models, comma separated",
+                value = models,
+                onValueChange = { models = it },
+                placeholder = ProviderModelsHint,
+                enabled = !providerBusy,
+            )
+            Spacer(Modifier.height(Space.md))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsAction(
+                    "Register",
+                    AgentIcons.Plus,
+                    onClick = register,
+                    modifier = Modifier.weight(1f),
+                    enabled = canRegister,
+                )
+                SettingsAction("Probe", AgentIcons.Wave, onClick = onProbe, enabled = !providerBusy, filled = false)
+            }
+            if (providerBusy) {
+                Spacer(Modifier.height(Space.sm))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    BusyIndicator()
+                    Spacer(Modifier.width(Space.sm))
+                    MonoText("contacting provider", size = 11.sp)
+                }
+            }
         }
         if (probeResult != null) {
-            Text(
-                probeResult,
-                Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+            ProbeResultStrip(probeResult)
+        }
+        if (desktop) {
+            Spacer(Modifier.height(Space.xs))
+            CaptionText(
+                "Probe asks the endpoint for its model list before saving anything.",
+                maxLines = 2,
+                size = 10.5.sp,
             )
         }
     }
 }
 
 @Composable
-private fun WatchdogCard(
+private fun ProviderRow(provider: ProviderEntry) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = if (desktop) 6.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AvatarTile(
+            icon = AgentIcons.Database,
+            size = if (desktop) 24.dp else 36.dp,
+            container = if (desktop) scheme.surfaceContainerHigh else scheme.primaryContainer,
+            content = if (desktop) scheme.onSurfaceVariant else scheme.onPrimaryContainer,
+        )
+        Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
+        Column(Modifier.weight(1f)) {
+            Text(
+                provider.id.ifBlank { "unnamed provider" },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = metrics().bodySize,
+                    fontWeight = FontWeight.Medium,
+                ),
+            )
+            CaptionText(
+                provider.baseUrl.ifBlank { "no base url" },
+                Modifier.padding(top = 1.dp),
+                maxLines = 1,
+                size = if (desktop) 10.5.sp else 12.sp,
+            )
+        }
+        Spacer(Modifier.width(Space.sm))
+        val modelLabel = when (provider.models.size) {
+            0 -> "no models"
+            1 -> "1 model"
+            else -> "${provider.models.size} models"
+        }
+        if (desktop) {
+            MonoText(modelLabel, size = 10.5.sp)
+            Spacer(Modifier.width(Space.sm))
+            MetaChip(provider.kind.ifBlank { "local" }, mono = true)
+        } else {
+            MetaChip(modelLabel, mono = true)
+        }
+    }
+}
+
+@Composable
+private fun ProbeResultStrip(text: String) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(if (desktop) Radius.xs else Radius.sm)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(scheme.surfaceContainerHighest)
+            .padding(horizontal = if (desktop) Space.sm else Space.md, vertical = if (desktop) 6.dp else 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            AgentIcons.Info,
+            null,
+            Modifier.size(if (desktop) 11.dp else 14.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(if (desktop) 6.dp else Space.sm))
+        CaptionText(text, maxLines = 3, size = if (desktop) 11.sp else 13.sp)
+    }
+}
+
+@Composable
+private fun WatchdogSection(
     snapshot: WorkspaceSnapshot,
     answer: String?,
     busy: Boolean,
     onAsk: (String) -> Unit,
 ) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
     var question by remember { mutableStateOf("") }
-    SectionCard(
+    val alerts = snapshot.watchdog.alerts
+    val submit = {
+        val text = question.trim()
+        if (text.isNotEmpty() && !busy) {
+            onAsk(text)
+            question = ""
+        }
+    }
+    SettingsSection(
         title = "Watchdog",
+        icon = AgentIcons.Shield,
         subtitle = "independent control loop",
-        icon = AgentIcons.Wave,
-        trailing = { StatusDot(snapshot.watchdog.healthy) },
+        tone = if (snapshot.watchdog.healthy) Tone.POSITIVE else Tone.DANGER,
+        status = { StatusPill(snapshot.watchdog.healthy, "healthy", "attention") },
     ) {
-        if (snapshot.watchdog.alerts.isEmpty()) {
-            Text("No alerts recorded.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        KVRow("Last heartbeat", formatRelative(snapshot.watchdog.lastHeartbeat, nowMillis()))
+        if (alerts.isEmpty()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    AgentIcons.CheckCircle,
+                    null,
+                    Modifier.size(if (desktop) 12.dp else 16.dp),
+                    tint = scheme.secondary,
+                )
+                Spacer(Modifier.width(if (desktop) 6.dp else Space.sm))
+                CaptionText(
+                    "No alerts recorded. The loop is quiet.",
+                    maxLines = 2,
+                    size = if (desktop) 11.sp else 13.sp,
+                )
+            }
         } else {
-            snapshot.watchdog.alerts.takeLast(4).forEach { alert ->
-                Text("• $alert", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            SectionLabel("Recent alerts", color = scheme.error)
+            Spacer(Modifier.height(Space.xs))
+            alerts.takeLast(4).forEach { alert ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Icon(
+                        AgentIcons.AlertTriangle,
+                        null,
+                        Modifier.size(if (desktop) 11.dp else 15.dp),
+                        tint = scheme.error,
+                    )
+                    Spacer(Modifier.width(if (desktop) 6.dp else Space.sm))
+                    Text(
+                        alert,
+                        maxLines = if (desktop) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        color = scheme.error,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = if (desktop) 11.sp else 13.sp),
+                    )
+                }
+                Spacer(Modifier.height(if (desktop) 3.dp else 6.dp))
             }
         }
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = question,
-            onValueChange = { question = it },
-            label = { Text("Ask the watchdog") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { onAsk(question.trim()); question = "" },
-            enabled = !busy && question.isNotBlank(),
-        ) { Text(if (busy) "Asking…" else "Ask") }
+        Spacer(Modifier.height(Space.xs))
+        ThinRule(alpha = if (desktop) 0.3f else 0.35f)
+        Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+        if (desktop) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                SettingsField(
+                    label = "Ask the watchdog",
+                    value = question,
+                    onValueChange = { question = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = WatchdogQuestionHint,
+                    enabled = !busy,
+                )
+                SettingsAction(
+                    "Ask",
+                    AgentIcons.Send,
+                    onClick = submit,
+                    modifier = Modifier.padding(bottom = 15.dp),
+                    enabled = !busy && question.isNotBlank(),
+                )
+                if (busy) {
+                    Spacer(Modifier.width(2.dp))
+                    BusyIndicator(Modifier.padding(bottom = 21.dp))
+                }
+            }
+        } else {
+            SettingsField(
+                label = "Ask the watchdog",
+                value = question,
+                onValueChange = { question = it },
+                placeholder = WatchdogQuestionHint,
+                enabled = !busy,
+            )
+            Spacer(Modifier.height(Space.md))
+            SettingsAction(
+                if (busy) "Asking" else "Ask the watchdog",
+                AgentIcons.Send,
+                onClick = submit,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !busy && question.isNotBlank(),
+            )
+        }
+        if (busy) {
+            Spacer(Modifier.height(if (desktop) Space.xs else Space.sm))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PulsingDot(size = if (desktop) 5.dp else 6.dp)
+                Spacer(Modifier.width(6.dp))
+                MonoText("watchdog is working", size = if (desktop) 9.5.sp else 11.sp)
+            }
+        }
         if (answer != null) {
-            Column(Modifier.padding(top = 12.dp)) {
-                LabelAccent("Answer")
-                Spacer(Modifier.height(6.dp))
-                MonospaceBlock(answer)
+            Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+            SectionLabel("Answer")
+            Spacer(Modifier.height(Space.xs))
+            CodeSurface(answer, maxLines = if (desktop) 12 else 8)
+        }
+    }
+}
+
+@Composable
+private fun WorkersSection(snapshot: WorkspaceSnapshot, onCancelTask: (String) -> Unit) {
+    val desktop = isDesktop()
+    val empty = snapshot.tasks.isEmpty() && snapshot.workers.isEmpty()
+    SettingsSection(
+        title = "Workers and tasks",
+        icon = AgentIcons.Users,
+        subtitle = "cancel stops the worker and marks the task failed",
+        tone = Tone.WARNING,
+        status = {
+            MetaChip(
+                text = if (empty) "idle" else "${snapshot.tasks.size} tasks",
+                tone = if (empty) Tone.MUTED else Tone.NEUTRAL,
+                mono = true,
+            )
+        },
+    ) {
+        if (empty) {
+            EmptyHint(
+                icon = AgentIcons.Users,
+                title = "No workers dispatched",
+                detail = "Configure a model, then send a task. Worker runs and their tasks show up here.",
+                dense = desktop,
+            )
+        } else {
+            if (snapshot.workers.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(if (desktop) Space.xs else 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    snapshot.workers.forEach { worker -> WorkerChip(worker) }
+                }
+                Spacer(Modifier.height(if (desktop) Space.sm else Space.md))
+            }
+            if (snapshot.tasks.isEmpty()) {
+                CaptionText(
+                    "No task rows yet. The engine reports tasks once a worker claims one.",
+                    maxLines = 2,
+                    size = if (desktop) 11.sp else 13.sp,
+                )
+            } else {
+                Column(Modifier.fillMaxWidth()) {
+                    snapshot.tasks.forEachIndexed { index, task ->
+                        if (desktop && index > 0) ThinRule(alpha = 0.25f)
+                        TaskRow(task, onCancelTask)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun WorkersCard(snapshot: WorkspaceSnapshot, onCancelTask: (String) -> Unit) {
-    SectionCard(
-        title = "Workers and tasks",
-        subtitle = "cancel stops the worker and marks the task failed",
-        icon = AgentIcons.Chart,
+private fun WorkerChip(worker: WorkerEntry) {
+    val running = worker.status.equals("running", ignoreCase = true) ||
+        worker.status.equals("busy", ignoreCase = true)
+    val label = worker.id.ifBlank { "worker" } + " · " + worker.status.ifBlank { "unknown" }
+    MetaChip(text = label, tone = if (running) Tone.ACCENT else Tone.NEUTRAL, mono = true)
+}
+
+@Composable
+private fun TaskRow(task: TaskEntry, onCancelTask: (String) -> Unit) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = if (desktop) 6.dp else 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (snapshot.tasks.isEmpty() && snapshot.workers.isEmpty()) {
+        AvatarTile(
+            icon = AgentIcons.Cpu,
+            size = if (desktop) 22.dp else 34.dp,
+            container = if (desktop) scheme.surfaceContainerHigh else scheme.secondaryContainer,
+            content = if (desktop) scheme.onSurfaceVariant else scheme.onSecondaryContainer,
+        )
+        Spacer(Modifier.width(if (desktop) Space.sm else Space.md))
+        Column(Modifier.weight(1f)) {
             Text(
-                "No workers have been dispatched. Configure a model, then send a task.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                task.title.ifBlank { "untitled task" },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = metrics().bodySize,
+                    fontWeight = FontWeight.Medium,
+                ),
             )
-            return@SectionCard
-        }
-        snapshot.tasks.forEach { task ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(task.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-                    Text(task.status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CaptionText(
+                    task.status.ifBlank { "unknown" },
+                    maxLines = 1,
+                    size = if (desktop) 10.5.sp else 12.sp,
+                )
+                if (desktop) {
+                    Spacer(Modifier.width(6.dp))
+                    MonoText(task.id.take(12), size = 9.5.sp)
                 }
-                TextButton(onClick = { onCancelTask(task.id) }) { Text("Cancel") }
             }
         }
+        Spacer(Modifier.width(Space.sm))
+        CancelTaskAction { onCancelTask(task.id) }
     }
+}
+
+@Composable
+private fun CancelTaskAction(onClick: () -> Unit) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .height(if (desktop) 26.dp else 44.dp)
+            .clip(RoundedCornerShape(Radius.xs))
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (desktop) 6.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            AgentIcons.Stop,
+            null,
+            Modifier.size(if (desktop) 10.dp else 13.dp),
+            tint = scheme.error,
+        )
+        Spacer(Modifier.width(Space.xs))
+        Text(
+            "Cancel",
+            maxLines = 1,
+            color = scheme.error,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = if (desktop) 10.5.sp else 12.sp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsAction(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    filled: Boolean = true,
+) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(if (desktop) Radius.xs else Radius.md)
+    val container = when {
+        !filled -> Color.Transparent
+        enabled -> scheme.primary
+        else -> scheme.surfaceContainerHighest
+    }
+    val contentColor = when {
+        !filled && enabled -> scheme.onSurfaceVariant
+        !filled -> scheme.onSurfaceVariant.copy(alpha = 0.4f)
+        enabled -> scheme.onPrimary
+        else -> scheme.onSurfaceVariant.copy(alpha = 0.5f)
+    }
+    Row(
+        modifier
+            .height(if (desktop) 28.dp else 48.dp)
+            .clip(shape)
+            .background(container)
+            .border(
+                1.dp,
+                if (filled) Color.Transparent else scheme.outlineVariant.copy(alpha = if (enabled) 0.7f else 0.35f),
+                shape,
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = if (desktop) 9.dp else 16.dp),
+        horizontalArrangement = if (desktop) Arrangement.Start else Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            null,
+            Modifier.size(if (desktop) 12.dp else 18.dp),
+            tint = contentColor,
+        )
+        Spacer(Modifier.width(if (desktop) 5.dp else Space.sm))
+        Text(
+            label,
+            maxLines = 1,
+            color = contentColor,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = if (desktop) 11.5.sp else 15.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun SettingsField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    enabled: Boolean = true,
+) {
+    val desktop = isDesktop()
+    val scheme = MaterialTheme.colorScheme
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = scheme.onSurface,
+        unfocusedTextColor = scheme.onSurface,
+        disabledTextColor = scheme.onSurfaceVariant.copy(alpha = 0.6f),
+        focusedContainerColor = if (desktop) Color.Transparent else scheme.surfaceContainerHighest,
+        unfocusedContainerColor = if (desktop) Color.Transparent else scheme.surfaceContainerHighest,
+        disabledContainerColor = if (desktop) Color.Transparent else scheme.surfaceContainerHighest,
+        focusedBorderColor = if (desktop) scheme.primary.copy(alpha = 0.7f) else Color.Transparent,
+        unfocusedBorderColor = if (desktop) scheme.outlineVariant.copy(alpha = 0.7f) else Color.Transparent,
+        disabledBorderColor = if (desktop) scheme.outlineVariant.copy(alpha = 0.35f) else Color.Transparent,
+        cursorColor = scheme.primary,
+        focusedPlaceholderColor = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+        unfocusedPlaceholderColor = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+    )
+    if (desktop) {
+        Column(modifier.fillMaxWidth()) {
+            SectionLabel(label)
+            Spacer(Modifier.height(Space.xs))
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                placeholder = {
+                    Text(
+                        placeholder,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                    )
+                },
+                shape = RoundedCornerShape(Radius.xs),
+                colors = colors,
+            )
+        }
+    } else {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+            label = {
+                Text(
+                    label,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
+                )
+            },
+            placeholder = {
+                Text(
+                    placeholder,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                )
+            },
+            shape = RoundedCornerShape(Radius.md),
+            colors = colors,
+        )
+    }
+}
+
+private fun parseModels(text: String): String =
+    text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
+
+private fun effectLabel(mode: EffectMode): String = when (mode) {
+    EffectMode.DISABLED -> "Off"
+    EffectMode.BLUR -> "Blur"
+    EffectMode.GLASS -> "Glass"
+}
+
+private fun effectExplanation(mode: EffectMode): String = when (mode) {
+    EffectMode.DISABLED -> "Effects are off. Capsule surfaces fall back to a flat container colour."
+    EffectMode.BLUR -> "Blur samples the backdrop at the radius above. Android 10 and later renders it through a capture-backed layer."
+    EffectMode.GLASS -> "Glass applies a fixed optical preset. The radius control only applies to Blur."
 }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import sandrone.agentflows.shared.AgentFlowsApp
-import sandrone.agentflows.shared.AgentFlowsTheme
 import sandrone.agentflows.shared.AndroidEngineHost
 
 class MainActivity : ComponentActivity() {
@@ -19,9 +18,7 @@ class MainActivity : ComponentActivity() {
             val dynamicColors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (isSystemInDarkTheme()) dynamicDarkColorScheme(this) else dynamicLightColorScheme(this)
             } else null
-            AgentFlowsTheme(dynamicColors) {
-                AgentFlowsApp()
-            }
+            AgentFlowsApp(dynamicScheme = dynamicColors)
         }
     }
 }

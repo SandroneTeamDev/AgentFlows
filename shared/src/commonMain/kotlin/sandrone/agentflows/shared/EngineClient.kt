@@ -9,7 +9,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 internal data class EngineConnection(val port: Int, val token: String)
@@ -199,7 +198,7 @@ internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
             id = item.string("id"),
             type = item.string("type"),
             label = item.string("label"),
-            timestamp = item["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L,
+            timestamp = item["timestamp"].longValue() ?: 0L,
             details = item["data"]?.toString() ?: "{}",
         )
     }
@@ -217,10 +216,10 @@ internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
             sessionId = item.string("sessionId"),
             model = item.string("model"),
             provider = item.string("provider"),
-            tokensIn = item["tokensIn"]?.jsonPrimitive?.longOrNull ?: 0L,
-            tokensOut = item["tokensOut"]?.jsonPrimitive?.longOrNull ?: 0L,
-            cost = item["cost"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            timestamp = item["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L,
+            tokensIn = item["tokensIn"].longValue() ?: 0L,
+            tokensOut = item["tokensOut"].longValue() ?: 0L,
+            cost = item["cost"].costValue(),
+            timestamp = item["timestamp"].longValue() ?: 0L,
         )
     }
     val providers = (obj["providers"] as? JsonArray).orEmpty().map { node ->
@@ -229,16 +228,16 @@ internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
             id = item.string("id"),
             kind = item.string("kind"),
             baseUrl = item.string("baseUrl"),
-            models = (item["models"] as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() },
+            models = (item["models"] as? JsonArray).orEmpty().map { it.textValue().orEmpty() },
         )
     }
     val watchdogNode = obj["watchdog"] as? JsonObject
     val watchdog = WatchdogInfo(
-        healthy = watchdogNode?.get("healthy")?.jsonPrimitive?.booleanOrNull ?: true,
-        alerts = (watchdogNode?.get("alerts") as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() },
-        lastHeartbeat = watchdogNode?.get("lastHeartbeat")?.jsonPrimitive?.longOrNull ?: 0L,
+        healthy = watchdogNode?.get("healthy").boolValue() ?: true,
+        alerts = (watchdogNode?.get("alerts") as? JsonArray).orEmpty().map { it.textValue().orEmpty() },
+        lastHeartbeat = watchdogNode?.get("lastHeartbeat").longValue() ?: 0L,
     )
-    val configured = obj["modelConfigured"]?.jsonPrimitive?.booleanOrNull ?: false
+    val configured = obj["modelConfigured"].boolValue() ?: false
     return WorkspaceSnapshot(
         connected = true,
         modelConfigured = configured,
@@ -248,41 +247,52 @@ internal fun parseSnapshot(element: JsonElement): WorkspaceSnapshot {
         usage = usage,
         providers = providers,
         watchdog = watchdog,
-        uptimeMs = obj["uptimeMs"]?.jsonPrimitive?.longOrNull ?: 0L,
-        message = obj["message"]?.jsonPrimitive?.contentOrNull
+        uptimeMs = obj["uptimeMs"].longValue() ?: 0L,
+        message = obj["message"].textValue()
             ?: if (configured) "Local engine online" else "Local engine online · model not configured",
     )
 }
 
 internal fun parseSubmitResult(element: JsonElement): String {
     val obj = element.jsonObject
-    val trigger = obj["triggerId"]?.jsonPrimitive?.contentOrNull.orEmpty()
-    val state = obj["state"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val trigger = obj["triggerId"].textValue().orEmpty()
+    val state = obj["state"].textValue().orEmpty()
     return if (state.isNotEmpty()) "$trigger|$state" else trigger
 }
 
 internal fun parseWatchdogAnswer(element: JsonElement): String {
     val obj = element.jsonObject
-    return obj["answer"]?.jsonPrimitive?.contentOrNull
-        ?: obj["message"]?.jsonPrimitive?.contentOrNull
+    return obj["answer"].textValue()
+        ?: obj["message"].textValue()
         ?: ""
 }
 
 internal fun parseProbeResult(element: JsonElement): Boolean {
     val obj = element.jsonObject
-    return obj["healthy"]?.jsonPrimitive?.booleanOrNull ?: false
+    return obj["healthy"].boolValue() ?: false
 }
 
-private fun JsonObject.string(key: String): String =
-    (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
+private fun JsonElement?.longValue(): Long? = (this as? JsonPrimitive)?.longOrNull
+private fun JsonElement?.intValue(): Int? = (this as? JsonPrimitive)?.intOrNull
+private fun JsonElement?.doubleValue(): Double? = (this as? JsonPrimitive)?.doubleOrNull
+private fun JsonElement?.boolValue(): Boolean? = (this as? JsonPrimitive)?.booleanOrNull
+private fun JsonElement?.textValue(): String? = (this as? JsonPrimitive)?.contentOrNull
+private fun JsonElement?.costValue(): Double =
+    (this as? JsonPrimitive)?.doubleOrNull
+        ?: (this as? JsonObject)?.get("actual").doubleValue()
+        ?: (this as? JsonObject)?.get("total").doubleValue()
+        ?: 0.0
+private fun JsonElement?.objectValue(): JsonObject? = this as? JsonObject
+
+private fun JsonObject.string(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 internal fun parseUsageSummary(element: JsonElement): UsageSummary {
     val obj = element.jsonObject
 
-    fun number(node: JsonObject?, key: String): Long = node?.get(key)?.jsonPrimitive?.longOrNull ?: 0L
-    fun real(node: JsonObject?, key: String): Double = node?.get(key)?.jsonPrimitive?.doubleOrNull ?: 0.0
-    fun text(node: JsonObject?, key: String): String = node?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
+    fun number(node: JsonObject?, key: String): Long = node?.get(key).longValue() ?: 0L
+    fun real(node: JsonObject?, key: String): Double = node?.get(key).doubleValue() ?: 0.0
+    fun text(node: JsonObject?, key: String): String = node?.get(key).textValue().orEmpty()
     fun flag(node: JsonObject?, key: String, fallback: Boolean): Boolean =
-        node?.get(key)?.jsonPrimitive?.booleanOrNull ?: fallback
+        node?.get(key).boolValue() ?: fallback
 
     fun bucket(node: JsonObject?): UsageBucket = UsageBucket(
         tokens = number(node, "tokens"),
@@ -314,7 +324,7 @@ internal fun parseUsageSummary(element: JsonElement): UsageSummary {
         UsageSessionBucket(
             sessionId = text(item, "sessionId"),
             role = text(item, "role"),
-            models = (item["models"] as? JsonArray).orEmpty().map { it.jsonPrimitive.contentOrNull.orEmpty() },
+            models = (item["models"] as? JsonArray).orEmpty().map { it.textValue().orEmpty() },
             tokens = number(item, "tokens"),
             tokensIn = number(item, "tokensIn"),
             tokensOut = number(item, "tokensOut"),
@@ -387,10 +397,10 @@ internal fun parseToolBuckets(element: JsonElement): List<UsageToolBucket> =
     (element as? JsonArray).orEmpty().map { entry ->
         val item = entry.jsonObject
         UsageToolBucket(
-            tool = (item["tool"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
-            calls = (item["calls"] as? JsonPrimitive)?.intOrNull ?: 0,
-            failures = (item["failures"] as? JsonPrimitive)?.intOrNull ?: 0,
-            avgDurationMs = (item["avgDurationMs"] as? JsonPrimitive)?.intOrNull ?: 0,
-            totalDurationMs = (item["totalDurationMs"] as? JsonPrimitive)?.longOrNull ?: 0L,
+            tool = item["tool"].textValue().orEmpty(),
+            calls = item["calls"].intValue() ?: 0,
+            failures = item["failures"].intValue() ?: 0,
+            avgDurationMs = item["avgDurationMs"].intValue() ?: 0,
+            totalDurationMs = item["totalDurationMs"].longValue() ?: 0L,
         )
     }
